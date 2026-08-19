@@ -171,6 +171,22 @@ export default function SessionPage() {
     setFocusRequest({ nodeId, token: Date.now() });
   }
 
+  // メモをドラッグして動かした位置を保存する（次回読み込み時も同じ位置に表示するため）
+  async function updateNodePosition(nodeId, x, y) {
+    setNodes((prev) =>
+      prev.map((n) => (n.id === nodeId ? { ...n, position_x: x, position_y: y } : n))
+    );
+    try {
+      const { error } = await supabase
+        .from('nodes')
+        .update({ position_x: x, position_y: y })
+        .eq('id', nodeId);
+      if (error) console.error('position update error:', error);
+    } catch (err) {
+      console.error(err);
+    }
+  }
+
   async function deleteLink(linkId) {
     await supabase.from('links').update({ deleted_at: new Date().toISOString() }).eq('id', linkId);
     await supabase.from('link_logs').insert({ link_id: linkId, action: 'DELETED' });
@@ -240,6 +256,7 @@ export default function SessionPage() {
             fragments={fragments}
             onNodeClick={openNodeDetail}
             focusRequest={focusRequest}
+            onNodeDragEnd={updateNodePosition}
           />
         </div>
       </div>

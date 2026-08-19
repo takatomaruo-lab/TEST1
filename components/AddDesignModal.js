@@ -51,7 +51,10 @@ export default function AddDesignModal({
     setSaving(true);
     setError('');
     try {
-      const path = `${sessionId}/${Date.now()}-${file.name}`;
+      const extMatch = file.name.match(/\.[a-zA-Z0-9]+$/);
+      const ext = extMatch ? extMatch[0] : '';
+      const safeName = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}${ext}`;
+      const path = `${sessionId}/${safeName}`;
       const { error: uploadErr } = await supabase.storage
         .from('design-images')
         .upload(path, file);
@@ -95,7 +98,7 @@ export default function AddDesignModal({
       onClose();
     } catch (err) {
       console.error(err);
-      setError('保存に失敗しました');
+      setError(`保存に失敗しました: ${err?.message || err}`);
     } finally {
       setSaving(false);
     }

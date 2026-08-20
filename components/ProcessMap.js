@@ -13,6 +13,7 @@ const LINK_STYLE = {
   manual_draw: { stroke: '#2f6fed', label: '手動' }, // ハンドルをドラッグして手動作成
   consult_ai: { stroke: '#8a3fd1', label: '相談' }, // 「AIに相談」から生成
   reference: { stroke: '#9a9a9a', label: '参照' }, // 作成時のチェックボックス選択
+  ai_adopt: { stroke: '#0e9488', label: '採用' }, // AI提案を番号指定で採用
 };
 
 const HANDLE_STYLE = {
@@ -200,7 +201,7 @@ export default function ProcessMap({
           target: l.target_node_id,
           sourceHandle,
           targetHandle,
-          label: isFragment ? '一部' : meta.label,
+          label: isFragment && l.link_source !== 'ai_adopt' ? '一部' : meta.label,
           style: { stroke: meta.stroke, strokeWidth: 2.5 },
           labelStyle: { fill: meta.stroke, fontSize: 11, fontWeight: 700 },
         };

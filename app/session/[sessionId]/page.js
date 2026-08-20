@@ -8,6 +8,27 @@ import AddDesignModal from '../../../components/AddDesignModal';
 import AddMemoModal from '../../../components/AddMemoModal';
 import NodeDetailPanel from '../../../components/NodeDetailPanel';
 
+// 半角数字1つだけ（例: "2" "2." "2番"）のメッセージを「提案の採用」として扱う
+const SUGGESTION_NUMBER_RE = /^\s*([1-5])[.．。)、]?\s*$/;
+
+// AIの番号付きリスト回答から、指定した番号の項目本文を取り出す
+function extractSuggestion(text, n) {
+  if (!text) return null;
+  const itemRegex = /(?:^|\n)\s*(\d+)\.\s*/g;
+  const items = [];
+  let match;
+  while ((match = itemRegex.exec(text)) !== null) {
+    items.push({ num: Number(match[1]), start: match.index, contentStart: itemRegex.lastIndex });
+  }
+  if (items.length === 0) return null;
+  const idx = items.findIndex((it) => it.num === n);
+  if (idx === -1) return null;
+  const contentStart = items[idx].contentStart;
+  const contentEnd = idx + 1 < items.length ? items[idx + 1].start : text.length;
+  const content = text.slice(contentStart, contentEnd).trim();
+  return content || null;
+}
+
 export default function SessionPage() {
   const params = useParams();
   const sessionId = params.sessionId;
@@ -99,7 +120,34 @@ export default function SessionPage() {
   }, [sessionId, loadCondition, loadData]);
 
   async function handleSend() {
-    if (!promptInput.trim() || sending) return;
+    const trimmed = promptInput.trim();
+    if (!trimmed || sending) return;
+
+    // 数字だけが送られたら「提案の採用」として処理し、AIには送らない
+    const numberMatch = trimmed.match(SUGGESTION_NUMBER_RE);
+    if (numberMatch) {
+      const n = Number(numberMatch[1]);
+      const lastAiNode = [...nodes]
+        .filter((node) => node.type === 'AI')
+        .sort((a, b) => (a.ai_turns?.sequence || 0) - (b.ai_turns?.sequence || 0))
+        .pop();
+      const suggestionText = lastAiNode
+        ? extractSuggestion(lastAiNode.ai_turns?.response || '', n)
+        : null;
+
+      if (lastAiNode && suggestionText) {
+        setSending(true);
+        await adoptSuggestion(suggestionText, lastAiNode.id);
+        setPromptInput('');
+        setSending(false);
+      } else {
+        alert(
+          `提案${n}番が見つかりませんでした。直前のAIの返答に${n}番の項目があるか確認してください。`
+        );
+      }
+      return;
+    }
+
     setSending(true);
     try {
       const res = await fetch('/api/ai/turn', {
@@ -107,7 +155,7 @@ export default function SessionPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           sessionId,
-          prompt: promptInput.trim(),
+          prompt: trimmed,
           history: chatHistory,
           linkSource: pendingLinkSource,
         }),
@@ -122,6 +170,61 @@ export default function SessionPage() {
       alert('AIへの送信に失敗しました。もう一度お試しください。');
     } finally {
       setSending(false);
+    }
+  }
+
+  // 提案文を思考メモとして採用し、AI回答のその部分（フラグメント）と紐付ける
+  async function adoptSuggestion(text, sourceAiNodeId) {
+    try {
+      const { data: fragment, error: fragErr } = await supabase
+        .from('ai_fragments')
+        .insert({ ai_node_id: sourceAiNodeId, selected_text: text })
+        .select()
+        .single();
+      if (fragErr) throw fragErr;
+
+      const { data: node, error: nodeErr } = await supabase
+        .from('nodes')
+        .insert({ session_id: sessionId, type: 'MEMO' })
+        .select()
+        .single();
+      if (nodeErr) throw nodeErr;
+
+      const { error: memoErr } = await supabase
+        .from('memos')
+        .insert({ node_id: node.id, text });
+      if (memoErr) throw memoErr;
+
+      const linkRows = [
+        {
+          source_node_id: null,
+          source_fragment_id: fragment.id,
+          target_node_id: node.id,
+          link_source: 'ai_adopt',
+        },
+      ];
+
+      const memoNodes = nodes
+        .filter((n) => n.type === 'MEMO')
+        .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+      const prevMemo = memoNodes[memoNodes.length - 1];
+      if (prevMemo) {
+        linkRows.push({
+          source_node_id: prevMemo.id,
+          source_fragment_id: null,
+          target_node_id: node.id,
+          link_source: 'auto_chain',
+        });
+      }
+
+      const { error: linkErr } = await supabase.from('links').insert(linkRows);
+      if (linkErr) console.error('links insert error:', linkErr);
+
+      await loadData();
+      setMemoToast({ nodeId: node.id });
+    } catch (err) {
+      console.error(err);
+      alert('提案の採用に失敗しました。');
     }
   }
 
@@ -261,7 +364,7 @@ export default function SessionPage() {
             <textarea
               value={promptInput}
               onChange={(e) => setPromptInput(e.target.value)}
-              placeholder="AIに質問..."
+              placeholder="AIに質問...（提案が出たら番号だけ入力するとメモに採用できます）"
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault();

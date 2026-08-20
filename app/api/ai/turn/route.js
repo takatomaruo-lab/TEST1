@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { supabase } from '../../../../lib/supabaseClient';
 
 const GEMINI_MODEL = 'gemini-3.5-flash';
+const SYSTEM_INSTRUCTION =
+  'あなたはデザイン検討を手伝うアシスタントです。回答は、今の状況で必要な提案だけを最大5個までの番号付きリスト（1. 2. 3. ...）で簡潔に示してください。各項目は1〜2文までとし、前置き・挨拶・まとめの言葉は書かないでください。提案が1つしかない場合は1個だけで構いません。提案ではなく単純な質問への回答の場合は、番号付きリストにせず2〜4文で簡潔に答えてください。';
 
 export async function POST(request) {
   try {
@@ -41,7 +43,15 @@ export async function POST(request) {
           'Content-Type': 'application/json',
           'x-goog-api-key': apiKey,
         },
-        body: JSON.stringify({ contents }),
+        body: JSON.stringify({
+          contents,
+          systemInstruction: {
+            parts: [{ text: SYSTEM_INSTRUCTION }],
+          },
+          generationConfig: {
+            maxOutputTokens: 400,
+          },
+        }),
       }
     );
 

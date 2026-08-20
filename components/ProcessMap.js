@@ -154,11 +154,30 @@ export default function ProcessMap({
           id: n.id,
           type: 'card',
           position,
+          draggable: n.type === 'DESIGN',
           data: { label: labelFor(n), color: COLOR[n.type] },
         };
       }),
     [nodes]
   );
+
+  // ノードの左右の位置関係から、一番近いハンドル同士を自動で選ぶ
+  const posMap = useMemo(() => {
+    const m = {};
+    flowNodes.forEach((n) => (m[n.id] = n.position));
+    return m;
+  }, [flowNodes]);
+
+  function pickHandles(sourceId, targetId) {
+    const sp = posMap[sourceId];
+    const tp = posMap[targetId];
+    if (!sp || !tp) return { sourceHandle: undefined, targetHandle: undefined };
+    const sourceIsLeft = sp.x <= tp.x;
+    return {
+      sourceHandle: sourceIsLeft ? 'right-source' : 'left-source',
+      targetHandle: sourceIsLeft ? 'left-target' : 'right-target',
+    };
+  }
 
   const flowEdges = useMemo(() => {
     const linkEdges = links
@@ -174,10 +193,13 @@ export default function ProcessMap({
           return null;
         }
         const meta = LINK_STYLE[l.link_source] || LINK_STYLE.reference;
+        const { sourceHandle, targetHandle } = pickHandles(sourceId, l.target_node_id);
         return {
           id: `link-${l.id}`,
           source: sourceId,
           target: l.target_node_id,
+          sourceHandle,
+          targetHandle,
           label: isFragment ? '一部' : meta.label,
           style: { stroke: meta.stroke, strokeWidth: 2.5 },
           labelStyle: { fill: meta.stroke, fontSize: 11, fontWeight: 700 },
@@ -188,17 +210,25 @@ export default function ProcessMap({
     const revisionEdges = nodes
       .filter((n) => n.type === 'DESIGN' && n.designs?.revision_parent_id)
       .filter((n) => nodeMap[n.designs.revision_parent_id])
-      .map((n) => ({
-        id: `rev-${n.id}`,
-        source: n.designs.revision_parent_id,
-        target: n.id,
-        label: '更新',
-        style: { strokeDasharray: '4 4' },
-        selectable: false,
-      }));
+      .map((n) => {
+        const { sourceHandle, targetHandle } = pickHandles(
+          n.designs.revision_parent_id,
+          n.id
+        );
+        return {
+          id: `rev-${n.id}`,
+          source: n.designs.revision_parent_id,
+          target: n.id,
+          sourceHandle,
+          targetHandle,
+          label: '更新',
+          style: { strokeDasharray: '4 4' },
+          selectable: false,
+        };
+      });
 
     return [...linkEdges, ...revisionEdges];
-  }, [links, fragments, nodes, nodeMap]);
+  }, [links, fragments, nodes, nodeMap, posMap]);
 
   const edgesForFlow = useMemo(
     () => flowEdges.map((e) => ({ ...e, selected: e.id === selectedEdgeId })),
@@ -241,7 +271,7 @@ export default function ProcessMap({
         if (n) onNodeClick(n);
       }}
       onNodeDragStop={(_, flowNode) => {
-        if (flowNode.type === 'memo' && onNodeDragEnd) {
+        if (onNodeDragEnd) {
           onNodeDragEnd(flowNode.id, flowNode.position.x, flowNode.position.y);
         }
       }}

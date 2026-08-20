@@ -1,11 +1,38 @@
 "use client";
 
 import { useMemo, useRef, useEffect, useState } from 'react';
-import { ReactFlow, Background, Controls } from '@xyflow/react';
+import { ReactFlow, Background, Controls, Handle, Position } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 
 const LANE_Y = { AI: 40, DESIGN: 260, MEMO: 480 };
 const COLOR = { AI: '#3554d1', DESIGN: '#1f9d6b' };
+
+// リンクの「できた経緯」ごとの色分け設定
+const LINK_STYLE = {
+  auto_chain: { stroke: '#c9a227', label: '関連' }, // 直前メモとの自動リンク
+  manual_draw: { stroke: '#2f6fed', label: '手動' }, // ハンドルをドラッグして手動作成
+  consult_ai: { stroke: '#8a3fd1', label: '相談' }, // 「AIに相談」から生成
+  reference: { stroke: '#9a9a9a', label: '参照' }, // 作成時のチェックボックス選択
+};
+
+const HANDLE_STYLE = {
+  width: 10,
+  height: 10,
+  background: '#fff',
+  border: '2px solid #555',
+  borderRadius: '50%',
+};
+
+function SideHandles() {
+  return (
+    <>
+      <Handle type="target" position={Position.Left} id="left-target" style={HANDLE_STYLE} />
+      <Handle type="source" position={Position.Left} id="left-source" style={HANDLE_STYLE} />
+      <Handle type="target" position={Position.Right} id="right-target" style={HANDLE_STYLE} />
+      <Handle type="source" position={Position.Right} id="right-source" style={HANDLE_STYLE} />
+    </>
+  );
+}
 
 function labelFor(node) {
   if (node.type === 'AI') {
@@ -34,6 +61,7 @@ function MemoNode({ data }) {
         transform: 'rotate(-1deg)',
       }}
     >
+      <SideHandles />
       <div style={{ fontWeight: 700, fontSize: 10, color: '#8a6d00', marginBottom: 4 }}>
         MEMO
       </div>
@@ -42,7 +70,27 @@ function MemoNode({ data }) {
   );
 }
 
-const NODE_TYPES = { memo: MemoNode };
+function CardNode({ data }) {
+  return (
+    <div
+      style={{
+        border: `2px solid ${data.color || '#999'}`,
+        borderRadius: 8,
+        padding: 8,
+        background: '#fff',
+        width: 180,
+        fontSize: 12,
+        whiteSpace: 'pre-wrap',
+        textAlign: 'left',
+      }}
+    >
+      <SideHandles />
+      {data.label}
+    </div>
+  );
+}
+
+const NODE_TYPES = { memo: MemoNode, card: CardNode };
 
 export default function ProcessMap({
   nodes,
@@ -51,6 +99,8 @@ export default function ProcessMap({
   onNodeClick,
   focusRequest,
   onNodeDragEnd,
+  onManualConnect,
+  onDeleteLink,
 }) {
   const nodeMap = useMemo(() => {
     const m = {};
@@ -81,6 +131,9 @@ export default function ProcessMap({
     };
   }, []);
 
+  // 選択中の線（クリック→Deleteキーで消すため）
+  const [selectedEdgeId, setSelectedEdgeId] = useState(null);
+
   const flowNodes = useMemo(
     () =>
       nodes.map((n, idx) => {
@@ -99,18 +152,9 @@ export default function ProcessMap({
         }
         return {
           id: n.id,
+          type: 'card',
           position,
-          data: { label: labelFor(n) },
-          style: {
-            border: `2px solid ${COLOR[n.type] || '#999'}`,
-            borderRadius: 8,
-            padding: 8,
-            background: '#fff',
-            width: 180,
-            fontSize: 12,
-            whiteSpace: 'pre-wrap',
-            textAlign: 'left',
-          },
+          data: { label: labelFor(n), color: COLOR[n.type] },
         };
       }),
     [nodes]
@@ -129,18 +173,14 @@ export default function ProcessMap({
         if (!sourceId || !nodeMap[sourceId] || !nodeMap[l.target_node_id]) {
           return null;
         }
-        // メモ同士の自動リンクは、関係性が一目でわかるよう専用スタイルにする
-        const isMemoRelation =
-          !isFragment &&
-          nodeMap[sourceId]?.type === 'MEMO' &&
-          nodeMap[l.target_node_id]?.type === 'MEMO';
+        const meta = LINK_STYLE[l.link_source] || LINK_STYLE.reference;
         return {
           id: `link-${l.id}`,
           source: sourceId,
           target: l.target_node_id,
-          label: isFragment ? '一部' : isMemoRelation ? '関連' : undefined,
-          style: isMemoRelation ? { stroke: '#c9a227', strokeWidth: 2 } : undefined,
-          labelStyle: isMemoRelation ? { fill: '#8a6d00', fontSize: 10 } : undefined,
+          label: isFragment ? '一部' : meta.label,
+          style: { stroke: meta.stroke, strokeWidth: 2.5 },
+          labelStyle: { fill: meta.stroke, fontSize: 11, fontWeight: 700 },
         };
       })
       .filter(Boolean);
@@ -154,10 +194,16 @@ export default function ProcessMap({
         target: n.id,
         label: '更新',
         style: { strokeDasharray: '4 4' },
+        selectable: false,
       }));
 
     return [...linkEdges, ...revisionEdges];
   }, [links, fragments, nodes, nodeMap]);
+
+  const edgesForFlow = useMemo(
+    () => flowEdges.map((e) => ({ ...e, selected: e.id === selectedEdgeId })),
+    [flowEdges, selectedEdgeId]
+  );
 
   const rfInstanceRef = useRef(null);
 
@@ -178,12 +224,15 @@ export default function ProcessMap({
   return (
     <ReactFlow
       nodes={flowNodes}
-      edges={flowEdges}
+      edges={edgesForFlow}
       nodeTypes={NODE_TYPES}
       nodesDraggable={false}
-      nodesConnectable={false}
+      nodesConnectable={true}
       elementsSelectable={true}
+      edgesUpdatable={false}
       panOnDrag={panEnabled}
+      selectionKeyCode={null}
+      deleteKeyCode={['Backspace', 'Delete']}
       onInit={(instance) => {
         rfInstanceRef.current = instance;
       }}
@@ -195,6 +244,20 @@ export default function ProcessMap({
         if (flowNode.type === 'memo' && onNodeDragEnd) {
           onNodeDragEnd(flowNode.id, flowNode.position.x, flowNode.position.y);
         }
+      }}
+      onConnect={(connection) => {
+        if (!connection.source || !connection.target) return;
+        if (connection.source === connection.target) return;
+        if (onManualConnect) onManualConnect(connection.source, connection.target);
+      }}
+      onEdgeClick={(_, edge) => setSelectedEdgeId(edge.id)}
+      onPaneClick={() => setSelectedEdgeId(null)}
+      onEdgesChange={(changes) => {
+        changes.forEach((change) => {
+          if (change.type === 'remove' && change.id?.startsWith('link-') && onDeleteLink) {
+            onDeleteLink(change.id.replace('link-', ''));
+          }
+        });
       }}
       fitView
     >

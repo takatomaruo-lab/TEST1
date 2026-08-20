@@ -63,6 +63,7 @@ export default function AddMemoModal({ sessionId, nodes, fragments, onClose, onC
             source_node_id: c.kind === 'fragment' ? null : c.id,
             source_fragment_id: c.kind === 'fragment' ? c.id : null,
             target_node_id: node.id,
+            link_source: 'reference',
           });
         }
       }
@@ -79,11 +80,20 @@ export default function AddMemoModal({ sessionId, nodes, fragments, onClose, onC
           source_node_id: prevMemo.id,
           source_fragment_id: null,
           target_node_id: node.id,
+          link_source: 'auto_chain',
         });
       }
 
       if (linkRows.length > 0) {
-        await supabase.from('links').insert(linkRows);
+        const { error: linkErr } = await supabase.from('links').insert(linkRows);
+        if (linkErr) {
+          console.error('links insert error:', linkErr);
+          onCreated(node.id);
+          setError(
+            `思考メモ自体は保存できましたが、関連付け（つながりの線）の保存に失敗しました: ${linkErr.message}`
+          );
+          return;
+        }
       }
 
       onCreated(node.id);

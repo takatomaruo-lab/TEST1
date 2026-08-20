@@ -187,6 +187,32 @@ export default function SessionPage() {
     }
   }
 
+  // ハンドル同士をドラッグしてつないだ時の保存処理
+  async function createManualLink(sourceNodeId, targetNodeId) {
+    try {
+      const { data: linkRow, error } = await supabase
+        .from('links')
+        .insert({
+          source_node_id: sourceNodeId,
+          source_fragment_id: null,
+          target_node_id: targetNodeId,
+          link_source: 'manual_draw',
+        })
+        .select()
+        .single();
+      if (error) {
+        console.error('manual link insert error:', error);
+        return;
+      }
+      if (linkRow) {
+        await supabase.from('link_logs').insert({ link_id: linkRow.id, action: 'CREATED' });
+      }
+      await loadData();
+    } catch (err) {
+      console.error(err);
+    }
+  }
+
   async function deleteLink(linkId) {
     await supabase.from('links').update({ deleted_at: new Date().toISOString() }).eq('id', linkId);
     await supabase.from('link_logs').insert({ link_id: linkId, action: 'DELETED' });
@@ -257,6 +283,8 @@ export default function SessionPage() {
             onNodeClick={openNodeDetail}
             focusRequest={focusRequest}
             onNodeDragEnd={updateNodePosition}
+            onManualConnect={createManualLink}
+            onDeleteLink={deleteLink}
           />
         </div>
       </div>

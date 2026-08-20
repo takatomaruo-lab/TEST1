@@ -89,6 +89,7 @@ export async function POST(request) {
           source_node_id: linkSource.node_id || null,
           source_fragment_id: linkSource.fragment_id || null,
           target_node_id: node.id,
+          link_source: 'consult_ai',
         })
         .select()
         .single();

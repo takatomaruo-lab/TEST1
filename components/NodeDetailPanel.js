@@ -80,7 +80,7 @@ export default function NodeDetailPanel({
 
       <h3 style={{ marginTop: 20 }}>この記録につながった項目</h3>
       {incomingLinks.length === 0 && (
-        <p style={{ color: 'var(--text-muted)', fontSize: 12 }}>なし</p>
+        <p style={{ color: 'var(--text-muted)', fontSize: 'var(--font-sm)' }}>なし</p>
       )}
       {incomingLinks.map((l) => (
         <div className="link-list-item" key={l.id}>
@@ -114,7 +114,7 @@ function SelectableResponse({ text, onSave }) {
         {text}
       </p>
       <div id="fragment-save-box">
-        <span id="fragment-save-label" style={{ fontSize: 12, color: 'var(--text-muted)' }} />
+        <span id="fragment-save-label" style={{ fontSize: 'var(--font-sm)', color: 'var(--text-muted)' }} />
         <br />
         <button
           type="button"

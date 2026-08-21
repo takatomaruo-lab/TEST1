@@ -273,8 +273,8 @@ export default function SessionPage() {
                   onClick={() => openNodeDetail(n)}
                   style={{ cursor: 'pointer' }}
                 >
-                  <div className="chat-prompt text-clamp-3">{n.ai_turns?.prompt}</div>
-                  <div className="chat-response text-clamp-3">{n.ai_turns?.response}</div>
+                  <div className="chat-prompt">{n.ai_turns?.prompt}</div>
+                  <div className="chat-response">{n.ai_turns?.response}</div>
                 </div>
               ))}
             {nodes.filter((n) => n.type === 'AI').length === 0 && (

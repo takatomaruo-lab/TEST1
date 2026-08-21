@@ -136,7 +136,7 @@ export default function AddDesignModal({
         <label>この案は何をもとに考えましたか？（複数選択可）</label>
         <div className="candidate-list">
           {candidates.length === 0 && (
-            <p style={{ color: 'var(--text-muted)', fontSize: 12 }}>
+            <p style={{ color: 'var(--text-muted)', fontSize: 'var(--font-sm)' }}>
               まだ選択できる記録がありません
             </p>
           )}

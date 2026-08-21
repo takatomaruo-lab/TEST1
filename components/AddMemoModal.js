@@ -111,7 +111,7 @@ export default function AddMemoModal({ sessionId, nodes, fragments, onClose, onC
         <label>この考えは何を見て生まれましたか？（任意・複数選択可）</label>
         <div className="candidate-list">
           {candidates.length === 0 && (
-            <p style={{ color: 'var(--text-muted)', fontSize: 12 }}>
+            <p style={{ color: 'var(--text-muted)', fontSize: 'var(--font-sm)' }}>
               まだ選択できる記録がありません
             </p>
           )}

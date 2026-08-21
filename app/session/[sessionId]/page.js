@@ -4,7 +4,6 @@ import { useEffect, useState, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import { supabase } from '../../../lib/supabaseClient';
 import ProcessMap from '../../../components/ProcessMap';
-import AddDesignModal from '../../../components/AddDesignModal';
 import AddMemoModal from '../../../components/AddMemoModal';
 import NodeDetailPanel from '../../../components/NodeDetailPanel';
 
@@ -23,7 +22,6 @@ export default function SessionPage() {
   const [pendingLinkSource, setPendingLinkSource] = useState(null);
 
   const [selectedNode, setSelectedNode] = useState(null);
-  const [showDesignModal, setShowDesignModal] = useState(false);
   const [showMemoModal, setShowMemoModal] = useState(false);
   const [reviseTarget, setReviseTarget] = useState(null);
 
@@ -142,12 +140,12 @@ export default function SessionPage() {
 
   function consultAI(node) {
     const preview =
-      node.type === 'DESIGN'
+      node.type === 'AI'
+        ? node.ai_turns?.prompt
+        : node.type === 'DESIGN'
         ? node.designs?.caption
-        : node.type === 'MEMO'
-        ? node.memos?.text
-        : node.ai_turns?.prompt;
-    const label = node.type === 'DESIGN' ? '設計案' : node.type === 'MEMO' ? '思考メモ' : 'AI対話';
+        : node.memos?.text || '(画像のみ)';
+    const label = node.type === 'AI' ? 'AI対話' : '思考メモ';
     setPromptInput(`(${label}「${(preview || '').slice(0, 30)}」について) `);
     setPendingLinkSource({ node_id: node.id });
     setSelectedNode(null);
@@ -155,7 +153,7 @@ export default function SessionPage() {
 
   function reviseNode(node) {
     setReviseTarget(node);
-    setShowDesignModal(true);
+    setShowMemoModal(true);
     setSelectedNode(null);
   }
 
@@ -254,6 +252,25 @@ export default function SessionPage() {
         <div className="error-banner">データの読み込みでエラーが発生しました: {loadError}</div>
       )}
       <div className="workspace-main">
+        <div className="map-column">
+          <ProcessMap
+            nodes={nodes}
+            links={links}
+            fragments={fragments}
+            onNodeClick={openNodeDetail}
+            focusRequest={focusRequest}
+            onNodeDragEnd={updateNodePosition}
+            onManualConnect={createManualLink}
+            onDeleteLink={deleteLink}
+            onAutoArrange={autoArrangeNodes}
+            showAddMemo={condition === 'TOOL'}
+            onAddMemo={() => {
+              setReviseTarget(null);
+              setShowMemoModal(true);
+            }}
+          />
+        </div>
+
         <div className="chat-column">
           {pendingLinkSource && (
             <div className="link-source-banner">
@@ -300,59 +317,18 @@ export default function SessionPage() {
             </button>
           </div>
         </div>
-
-        <div className="map-column">
-          <ProcessMap
-            nodes={nodes}
-            links={links}
-            fragments={fragments}
-            onNodeClick={openNodeDetail}
-            focusRequest={focusRequest}
-            onNodeDragEnd={updateNodePosition}
-            onManualConnect={createManualLink}
-            onDeleteLink={deleteLink}
-            onAutoArrange={autoArrangeNodes}
-          />
-        </div>
       </div>
-
-      {condition === 'TOOL' && (
-        <div className="bottom-bar">
-          <button
-            className="btn"
-            onClick={() => {
-              setReviseTarget(null);
-              setShowDesignModal(true);
-            }}
-          >
-            ＋設計案
-          </button>
-          <button className="btn" onClick={() => setShowMemoModal(true)}>
-            ＋思考メモ
-          </button>
-        </div>
-      )}
-
-      {showDesignModal && (
-        <AddDesignModal
-          sessionId={sessionId}
-          nodes={nodes}
-          fragments={fragments}
-          revisionTarget={reviseTarget}
-          onClose={() => {
-            setShowDesignModal(false);
-            setReviseTarget(null);
-          }}
-          onCreated={loadData}
-        />
-      )}
 
       {showMemoModal && (
         <AddMemoModal
           sessionId={sessionId}
           nodes={nodes}
           fragments={fragments}
-          onClose={() => setShowMemoModal(false)}
+          revisionTarget={reviseTarget}
+          onClose={() => {
+            setShowMemoModal(false);
+            setReviseTarget(null);
+          }}
           onCreated={handleMemoCreated}
         />
       )}

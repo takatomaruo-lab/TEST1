@@ -8,8 +8,12 @@ function sourceLabel(link, nodeMap, fragments) {
   const n = nodeMap[link.source_node_id];
   if (!n) return '(不明)';
   if (n.type === 'AI') return `AI対話：${(n.ai_turns?.prompt || '').slice(0, 20)}`;
-  if (n.type === 'DESIGN') return `設計案：${n.designs?.caption || '(無題)'}`;
-  if (n.type === 'MEMO') return `思考メモ：${(n.memos?.text || '').slice(0, 20)}`;
+  if (n.type === 'DESIGN') return `思考メモ：${n.designs?.caption || '(無題)'}`;
+  if (n.type === 'MEMO') {
+    const label = (n.memos?.text || '').slice(0, 20);
+    if (label) return `思考メモ：${label}`;
+    return n.memos?.image_path ? '思考メモ：(画像のみ)' : '思考メモ：(空)';
+  }
   return '(不明)';
 }
 
@@ -34,7 +38,9 @@ export default function NodeDetailPanel({
       <button className="btn-secondary" onClick={onClose} style={{ float: 'right' }}>
         閉じる
       </button>
-      <span className={`badge badge-${node.type}`}>{node.type}</span>
+      <span className={`badge badge-${node.type === 'AI' ? 'AI' : 'MEMO'}`}>
+        {node.type === 'AI' ? 'AI対話' : '思考メモ'}
+      </span>
 
       {node.type === 'AI' && (
         <div>
@@ -48,12 +54,16 @@ export default function NodeDetailPanel({
         </div>
       )}
 
+      {/* DESIGNは過去セッションの記録。現在は思考メモに統合済み */}
       {node.type === 'DESIGN' && (
         <div>
-          <h3>{node.designs?.caption || '設計案'}</h3>
+          <h3>思考メモ</h3>
+          {node.designs?.caption && (
+            <p style={{ whiteSpace: 'pre-wrap' }}>{node.designs.caption}</p>
+          )}
           {node.designs?.image_path && (
             /* eslint-disable-next-line @next/next/no-img-element */
-            <img src={node.designs.image_path} alt="設計案" className="design-image" />
+            <img src={node.designs.image_path} alt="添付画像" className="design-image" />
           )}
         </div>
       )}
@@ -61,7 +71,13 @@ export default function NodeDetailPanel({
       {node.type === 'MEMO' && (
         <div>
           <h3>思考メモ</h3>
-          <p style={{ whiteSpace: 'pre-wrap' }}>{node.memos?.text}</p>
+          {node.memos?.text && (
+            <p style={{ whiteSpace: 'pre-wrap' }}>{node.memos.text}</p>
+          )}
+          {node.memos?.image_path && (
+            /* eslint-disable-next-line @next/next/no-img-element */
+            <img src={node.memos.image_path} alt="添付画像" className="design-image" />
+          )}
         </div>
       )}
 
@@ -70,9 +86,9 @@ export default function NodeDetailPanel({
           <button className="btn-secondary" onClick={() => onConsultAI(node)}>
             これについてAIに相談
           </button>
-          {node.type === 'DESIGN' && (
+          {node.type !== 'AI' && (
             <button className="btn-secondary" onClick={() => onRevise(node)}>
-              この案を更新
+              このメモを更新
             </button>
           )}
         </div>

@@ -12,9 +12,11 @@ const TOP_MARGIN = 40;    // 上端の余白
 const ROW_GAP = 44;       // 同じ段に複数ノードが並ぶときの縦間隔
 
 // globals.cssで定義済みのCSS変数を参照し、色の定義をここに重複させない
+// 種別は「AI対話」「思考メモ」の2種類。
+// DESIGNは過去セッションの記録で、現在は思考メモに統合済みのため同じ色で表示する
 const COLOR = {
   AI: 'var(--ai-pill)',
-  DESIGN: 'var(--design-pill)',
+  DESIGN: 'var(--memo-pill)',
   MEMO: 'var(--memo-pill)',
 };
 
@@ -58,7 +60,11 @@ function truncate(text) {
 function bodyFor(node) {
   if (node.type === 'AI') return truncate(node.ai_turns?.prompt);
   if (node.type === 'DESIGN') return truncate(node.designs?.caption || '(無題)');
-  if (node.type === 'MEMO') return truncate(node.memos?.text);
+  if (node.type === 'MEMO') {
+    const memo = node.memos;
+    if (memo?.text) return truncate(memo.text);
+    return memo?.image_path ? '(画像のみ)' : '(空)';
+  }
   return node.type;
 }
 
@@ -68,6 +74,13 @@ function searchableText(node) {
   if (node.type === 'DESIGN') return node.designs?.caption || '';
   if (node.type === 'MEMO') return node.memos?.text || '';
   return '';
+}
+
+// 更新前の記録のノードID。思考メモ・過去の設計案どちらにも対応する
+function revisionParentOf(node) {
+  if (node.type === 'MEMO') return node.memos?.revision_parent_id || null;
+  if (node.type === 'DESIGN') return node.designs?.revision_parent_id || null;
+  return null;
 }
 
 // ピル型ノード。幅は文字数に応じて自動で決まる
@@ -105,6 +118,8 @@ export default function ProcessMap({
   onManualConnect,
   onDeleteLink,
   onAutoArrange,
+  showAddMemo,
+  onAddMemo,
 }) {
   const nodeMap = useMemo(() => {
     const m = {};
@@ -139,7 +154,7 @@ export default function ProcessMap({
   const [selectedEdgeId, setSelectedEdgeId] = useState(null);
 
   // 簡易フィルタ（P2-2）：種別の表示/非表示とキーワード検索
-  const [typeFilter, setTypeFilter] = useState({ AI: true, DESIGN: true, MEMO: true });
+  const [typeFilter, setTypeFilter] = useState({ AI: true, MEMO: true });
   const [searchText, setSearchText] = useState('');
 
   function toggleTypeFilter(type) {
@@ -150,7 +165,9 @@ export default function ProcessMap({
     const q = searchText.trim().toLowerCase();
     const ids = new Set();
     nodes.forEach((n) => {
-      if (!typeFilter[n.type]) return;
+      // DESIGNは過去セッションの記録。思考メモに統合済みのため同じ扱いにする
+      const filterKey = n.type === 'DESIGN' ? 'MEMO' : n.type;
+      if (!typeFilter[filterKey]) return;
       if (q && !searchableText(n).toLowerCase().includes(q)) return;
       ids.add(n.id);
     });
@@ -178,9 +195,8 @@ export default function ProcessMap({
       }
     });
     nodes.forEach((n) => {
-      if (n.type === 'DESIGN' && n.designs?.revision_parent_id && incoming[n.id]) {
-        incoming[n.id].push(n.designs.revision_parent_id);
-      }
+      const parentId = revisionParentOf(n);
+      if (parentId && incoming[n.id]) incoming[n.id].push(parentId);
     });
 
     // 段（depth）を計算する。新しい中間ノードが挿入されると後段も自動的に右へ押し出される
@@ -313,19 +329,16 @@ export default function ProcessMap({
       .filter(Boolean);
 
     const revisionEdges = nodes
-      .filter((n) => n.type === 'DESIGN' && n.designs?.revision_parent_id)
-      .filter((n) => nodeMap[n.designs.revision_parent_id])
-      .filter(
-        (n) => visibleNodeIds.has(n.id) && visibleNodeIds.has(n.designs.revision_parent_id)
-      )
+      .filter((n) => {
+        const pid = revisionParentOf(n);
+        return pid && nodeMap[pid] && visibleNodeIds.has(n.id) && visibleNodeIds.has(pid);
+      })
       .map((n) => {
-        const { sourceHandle, targetHandle } = pickHandles(
-          n.designs.revision_parent_id,
-          n.id
-        );
+        const parentId = revisionParentOf(n);
+        const { sourceHandle, targetHandle } = pickHandles(parentId, n.id);
         return {
           id: `rev-${n.id}`,
-          source: n.designs.revision_parent_id,
+          source: parentId,
           target: n.id,
           sourceHandle,
           targetHandle,
@@ -425,15 +438,6 @@ export default function ProcessMap({
             <label className="map-filter-checkbox">
               <input
                 type="checkbox"
-                checked={typeFilter.DESIGN}
-                onChange={() => toggleTypeFilter('DESIGN')}
-              />
-              <span className="map-filter-swatch map-filter-swatch-DESIGN" />
-              設計案
-            </label>
-            <label className="map-filter-checkbox">
-              <input
-                type="checkbox"
                 checked={typeFilter.MEMO}
                 onChange={() => toggleTypeFilter('MEMO')}
               />
@@ -441,6 +445,11 @@ export default function ProcessMap({
               思考メモ
             </label>
           </div>
+          {showAddMemo && (
+            <button type="button" className="btn map-filter-add" onClick={onAddMemo}>
+              ＋思考メモ
+            </button>
+          )}
         </div>
       </Panel>
       <Panel position="top-right">

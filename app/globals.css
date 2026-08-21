@@ -12,7 +12,6 @@
 
   /* プロセスマップのピル型ノード用（白文字とのコントラストを確保した濃いめの値） */
   --ai-pill: #2f49b8;
-  --design-pill: #177952;
   --memo-pill: #8a6d00;
 
   /* 角丸 */
@@ -134,7 +133,7 @@ label {
 .chat-column {
   width: 40%;
   min-width: 320px;
-  border-right: 1px solid var(--border);
+  border-left: 1px solid var(--border);
   display: flex;
   flex-direction: column;
   background: var(--surface);
@@ -183,14 +182,6 @@ label {
 .map-column {
   flex: 1;
   position: relative;
-}
-
-.bottom-bar {
-  display: flex;
-  gap: var(--space-sm);
-  padding: 10px var(--space-lg);
-  border-top: 1px solid var(--border);
-  background: var(--surface);
 }
 
 .modal-overlay {
@@ -372,5 +363,12 @@ label {
   flex-shrink: 0;
 }
 .map-filter-swatch-AI { background: var(--ai-pill); }
-.map-filter-swatch-DESIGN { background: var(--design-pill); }
 .map-filter-swatch-MEMO { background: var(--memo-pill); }
+
+/* フィルタパネル内に置く「＋思考メモ」ボタン */
+.map-filter-add {
+  margin-top: var(--space-xs);
+  width: 100%;
+  font-size: var(--font-sm);
+  padding: 6px var(--space-md);
+}

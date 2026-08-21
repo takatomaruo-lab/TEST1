@@ -16,7 +16,7 @@
   /* ノードの色。ProcessMap.js の PALETTE と必ず同じ値にすること */
   --ai-pill: var(--pal-saffron);
   --memo-pill: var(--pal-moonstone);
-  --pill-text: var(--pal-gunmetal);
+  --pill-text: #ffffff;
 
   --ai-color: var(--pal-saffron);
   --memo-color: var(--pal-moonstone);
@@ -138,8 +138,9 @@ label {
 }
 
 .chat-column {
-  width: 40%;
-  min-width: 320px;
+  /* 作業画面とAIチャットの横幅比率は 2 : 1 */
+  flex: 1;
+  min-width: 0;
   border-left: 1px solid var(--border);
   display: flex;
   flex-direction: column;
@@ -187,7 +188,9 @@ label {
 }
 
 .map-column {
-  flex: 1;
+  /* 作業画面とAIチャットの横幅比率は 2 : 1 */
+  flex: 2;
+  min-width: 0;
   position: relative;
 }
 
@@ -432,11 +435,19 @@ label {
   padding: 4px var(--space-md);
 }
 
-/* マップ右上のボタン群 */
-.map-top-actions {
+/* 画面全体の上中央に固定するボタン群 */
+.global-top-actions {
+  position: fixed;
+  top: 15px;
+  left: 50%;
+  transform: translateX(-50%);
   display: flex;
   gap: var(--space-sm);
   align-items: center;
+  z-index: 30;
+}
+.global-top-actions .btn-secondary {
+  box-shadow: 0 2px 6px rgba(32, 55, 59, 0.12);
 }
 
 /* AIチャットの表示・非表示スイッチ */
@@ -481,8 +492,9 @@ label {
   font-size: var(--font-sm);
   font-weight: 600;
   color: var(--pill-text);
-  background: rgba(255, 255, 255, 0.9);
+  background: rgba(32, 55, 59, 0.35);
 }
+.pill-edit-input::placeholder { color: rgba(255, 255, 255, 0.7); }
 .pill-edit-input:focus {
-  outline: 2px solid var(--pal-gunmetal);
+  outline: 2px solid #ffffff;
 }

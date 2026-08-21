@@ -273,6 +273,29 @@ export default function SessionPage() {
       {loadError && (
         <div className="error-banner">データの読み込みでエラーが発生しました: {loadError}</div>
       )}
+      {/* 画面全体の上中央に固定するボタン群 */}
+      <div className="global-top-actions">
+        <button
+          type="button"
+          className="btn-secondary"
+          onClick={autoArrangeNodes}
+          title="接続関係・作成時刻をもとに配置を再計算します（手動で動かした位置はリセットされます）"
+        >
+          自動整列
+        </button>
+        <button
+          type="button"
+          className={`btn-secondary chat-toggle${showChat ? ' is-on' : ''}`}
+          onClick={() => setShowChat((v) => !v)}
+          aria-pressed={showChat}
+        >
+          <span className="chat-toggle-track">
+            <span className="chat-toggle-knob" />
+          </span>
+          AIチャット
+        </button>
+      </div>
+
       <div className="workspace-main">
         <div className="map-column">
           <ProcessMap
@@ -284,7 +307,6 @@ export default function SessionPage() {
             onNodeDragEnd={updateNodePosition}
             onManualConnect={createManualLink}
             onDeleteLink={deleteLink}
-            onAutoArrange={autoArrangeNodes}
             showAddMemo={condition === 'TOOL'}
             onAddMemo={(isAi) => {
               setReviseTarget(null);
@@ -292,8 +314,6 @@ export default function SessionPage() {
               setShowMemoModal(true);
             }}
             onEditNodeText={updateMemoText}
-            showChat={showChat}
-            onToggleChat={() => setShowChat((v) => !v)}
           />
         </div>
 

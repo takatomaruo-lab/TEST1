@@ -229,12 +229,9 @@ export default function ProcessMap({
   onNodeDragEnd,
   onManualConnect,
   onDeleteLink,
-  onAutoArrange,
   showAddMemo,
   onAddMemo,
   onEditNodeText,
-  showChat,
-  onToggleChat,
 }) {
   const nodeMap = useMemo(() => {
     const m = {};
@@ -559,43 +556,20 @@ export default function ProcessMap({
             <div className="map-filter-actions">
               <button
                 type="button"
-                className="btn map-add-memo"
-                onClick={() => onAddMemo(false)}
-              >
-                ＋思考メモ
-              </button>
-              <button
-                type="button"
                 className="btn map-add-ai"
                 onClick={() => onAddMemo(true)}
               >
                 ＋AIメモ
               </button>
+              <button
+                type="button"
+                className="btn map-add-memo"
+                onClick={() => onAddMemo(false)}
+              >
+                ＋思考メモ
+              </button>
             </div>
           )}
-        </div>
-      </Panel>
-      <Panel position="top-right">
-        <div className="map-top-actions">
-          <button
-            type="button"
-            className="btn-secondary"
-            onClick={onAutoArrange}
-            title="接続関係・作成時刻をもとに配置を再計算します（手動で動かした位置はリセットされます）"
-          >
-            自動整列
-          </button>
-          <button
-            type="button"
-            className={`btn-secondary chat-toggle${showChat ? ' is-on' : ''}`}
-            onClick={onToggleChat}
-            aria-pressed={showChat}
-          >
-            <span className="chat-toggle-track">
-              <span className="chat-toggle-knob" />
-            </span>
-            AIチャット
-          </button>
         </div>
       </Panel>
       <Panel position="bottom-center">

@@ -30,12 +30,18 @@ const PALETTE = {
 };
 
 // 種別は「AIメモ」「思考メモ」の2種類。
+// ・AIメモ  = AIチャット由来の記録（type='AI'）＋ 手動作成のAIメモ（memos.is_ai = true）
+// ・思考メモ = 参加者自身の思考（memos.is_ai = false）
 // DESIGNは過去セッションの記録で、思考メモに統合済みのため同じ色で表示する
-const COLOR = {
-  AI: PALETTE.saffron,
-  DESIGN: PALETTE.moonstone,
-  MEMO: PALETTE.moonstone,
-};
+function isAiNode(node) {
+  if (node.type === 'AI') return true;
+  if (node.type === 'MEMO') return !!node.memos?.is_ai;
+  return false;
+}
+
+function colorForNode(node) {
+  return isAiNode(node) ? PALETTE.saffron : PALETTE.moonstone;
+}
 
 // ノードに表示する文字数の上限。全文はクリックで詳細パネルに表示する
 const LABEL_MAX_CHARS = 30;
@@ -85,12 +91,66 @@ function revisionParentOf(node) {
 }
 
 // ピル型ノード。AIメモ・思考メモとも同じ形・同じ文字色で、塗りの色だけが異なる
+// ダブルクリックで本文をその場で書き換えられる（AIチャット由来の記録を除く）
 function PillNode({ data }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState('');
+  const inputRef = useRef(null);
+
+  useEffect(() => {
+    if (editing && inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select();
+    }
+  }, [editing]);
+
+  function startEditing() {
+    if (!data.editable) return;
+    setDraft(data.rawText || '');
+    setEditing(true);
+  }
+
+  function commit() {
+    setEditing(false);
+    const next = draft.trim();
+    if (next && next !== (data.rawText || '')) {
+      data.onCommitText(next);
+    }
+  }
+
+  if (editing) {
+    return (
+      <div className="pill-node pill-node-editing" style={{ background: data.color }}>
+        <SideHandles />
+        <input
+          ref={inputRef}
+          className="pill-edit-input"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              commit();
+            }
+            if (e.key === 'Escape') {
+              e.preventDefault();
+              setEditing(false);
+            }
+          }}
+          // キー入力がReact Flowのショートカット（Deleteなど）に拾われないようにする
+          onKeyDownCapture={(e) => e.stopPropagation()}
+        />
+      </div>
+    );
+  }
+
   return (
     <div
       className="pill-node"
       style={{ background: data.color }}
-      title={data.fullText}
+      title={data.editable ? 'ダブルクリックで編集' : data.fullText}
+      onDoubleClick={startEditing}
     >
       <SideHandles />
       {data.body}
@@ -172,6 +232,9 @@ export default function ProcessMap({
   onAutoArrange,
   showAddMemo,
   onAddMemo,
+  onEditNodeText,
+  showChat,
+  onToggleChat,
 }) {
   const nodeMap = useMemo(() => {
     const m = {};
@@ -194,8 +257,8 @@ export default function ProcessMap({
     const q = searchText.trim().toLowerCase();
     const ids = new Set();
     nodes.forEach((n) => {
-      // DESIGNは過去セッションの記録。思考メモに統合済みのため同じ扱いにする
-      const filterKey = n.type === 'DESIGN' ? 'MEMO' : n.type;
+      // 手動作成のAIメモもAIメモ側として絞り込む
+      const filterKey = isAiNode(n) ? 'AI' : 'MEMO';
       if (!typeFilter[filterKey]) return;
       if (q && !searchableText(n).toLowerCase().includes(q)) return;
       ids.add(n.id);
@@ -304,7 +367,13 @@ export default function ProcessMap({
             data: {
               body: bodyFor(n),
               fullText: searchableText(n),
-              color: COLOR[n.type] || PALETTE.gunmetal,
+              color: colorForNode(n),
+              // AIチャット由来の記録は実際のやり取りそのものなので編集させない
+              editable: n.type === 'MEMO',
+              rawText: n.type === 'MEMO' ? n.memos?.text || '' : '',
+              onCommitText: (newText) => {
+                if (onEditNodeText) onEditNodeText(n.id, newText);
+              },
             },
           };
         }),
@@ -331,7 +400,7 @@ export default function ProcessMap({
 
   function colorOf(nodeId) {
     const n = nodeMap[nodeId];
-    return (n && COLOR[n.type]) || PALETTE.gunmetal;
+    return n ? colorForNode(n) : PALETTE.gunmetal;
   }
 
   const flowEdges = useMemo(() => {
@@ -487,21 +556,47 @@ export default function ProcessMap({
             </label>
           </div>
           {showAddMemo && (
-            <button type="button" className="btn map-filter-add" onClick={onAddMemo}>
-              ＋思考メモ
-            </button>
+            <div className="map-filter-actions">
+              <button
+                type="button"
+                className="btn map-add-memo"
+                onClick={() => onAddMemo(false)}
+              >
+                ＋思考メモ
+              </button>
+              <button
+                type="button"
+                className="btn map-add-ai"
+                onClick={() => onAddMemo(true)}
+              >
+                ＋AIメモ
+              </button>
+            </div>
           )}
         </div>
       </Panel>
       <Panel position="top-right">
-        <button
-          type="button"
-          className="btn-secondary"
-          onClick={onAutoArrange}
-          title="接続関係・作成時刻をもとに配置を再計算します（手動で動かした位置はリセットされます）"
-        >
-          自動整列
-        </button>
+        <div className="map-top-actions">
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={onAutoArrange}
+            title="接続関係・作成時刻をもとに配置を再計算します（手動で動かした位置はリセットされます）"
+          >
+            自動整列
+          </button>
+          <button
+            type="button"
+            className={`btn-secondary chat-toggle${showChat ? ' is-on' : ''}`}
+            onClick={onToggleChat}
+            aria-pressed={showChat}
+          >
+            <span className="chat-toggle-track">
+              <span className="chat-toggle-knob" />
+            </span>
+            AIチャット
+          </button>
+        </div>
       </Panel>
       <Panel position="bottom-center">
         <p className="map-hint">

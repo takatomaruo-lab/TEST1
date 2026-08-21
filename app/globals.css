@@ -371,13 +371,24 @@ label {
 .map-filter-swatch-AI { background: var(--ai-pill); }
 .map-filter-swatch-MEMO { background: var(--memo-pill); }
 
-/* フィルタパネル内に置く「＋思考メモ」ボタン */
-.map-filter-add {
+/* フィルタパネル内に置く「＋思考メモ」「＋AIメモ」ボタン */
+.map-filter-actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
   margin-top: var(--space-xs);
+}
+.map-filter-actions .btn {
   width: 100%;
   font-size: var(--font-sm);
   padding: 6px var(--space-md);
+  font-weight: 700;
 }
+/* ボタンの色はマップ上のノードの色と対応させる */
+.map-add-memo { background: var(--memo-pill); color: var(--pal-gunmetal); }
+.map-add-memo:hover { background: var(--accent-hover); }
+.map-add-ai { background: var(--ai-pill); color: var(--pal-gunmetal); }
+.map-add-ai:hover { background: #f0b43a; }
 
 /* プロセスマップのピル型ノード。AIメモ・思考メモとも同じ形・同じ文字色で塗りだけ変える */
 .pill-node {
@@ -419,4 +430,59 @@ label {
   background: rgba(255, 255, 255, 0.85);
   border-radius: var(--radius-pill);
   padding: 4px var(--space-md);
+}
+
+/* マップ右上のボタン群 */
+.map-top-actions {
+  display: flex;
+  gap: var(--space-sm);
+  align-items: center;
+}
+
+/* AIチャットの表示・非表示スイッチ */
+.chat-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  font-size: var(--font-sm);
+}
+.chat-toggle-track {
+  width: 32px;
+  height: 18px;
+  border-radius: var(--radius-pill);
+  background: var(--border);
+  position: relative;
+  transition: background 0.15s ease;
+  flex-shrink: 0;
+}
+.chat-toggle-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: 0 1px 2px rgba(32, 55, 59, 0.3);
+  transition: transform 0.15s ease;
+}
+.chat-toggle.is-on .chat-toggle-track { background: var(--pal-moonstone); }
+.chat-toggle.is-on .chat-toggle-knob { transform: translateX(14px); }
+
+/* ノード本文のその場編集 */
+.pill-node-editing {
+  padding: 3px 8px;
+}
+.pill-edit-input {
+  width: 220px;
+  border: none;
+  border-radius: var(--radius-pill);
+  padding: 3px var(--space-sm);
+  font-size: var(--font-sm);
+  font-weight: 600;
+  color: var(--pill-text);
+  background: rgba(255, 255, 255, 0.9);
+}
+.pill-edit-input:focus {
+  outline: 2px solid var(--pal-gunmetal);
 }

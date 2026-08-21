@@ -7,12 +7,13 @@ function sourceLabel(link, nodeMap, fragments) {
   }
   const n = nodeMap[link.source_node_id];
   if (!n) return '(不明)';
-  if (n.type === 'AI') return `AI対話：${(n.ai_turns?.prompt || '').slice(0, 20)}`;
+  if (n.type === 'AI') return `AIメモ：${(n.ai_turns?.prompt || '').slice(0, 20)}`;
   if (n.type === 'DESIGN') return `思考メモ：${n.designs?.caption || '(無題)'}`;
   if (n.type === 'MEMO') {
     const label = (n.memos?.text || '').slice(0, 20);
-    if (label) return `思考メモ：${label}`;
-    return n.memos?.image_path ? '思考メモ：(画像のみ)' : '思考メモ：(空)';
+    const kind = n.memos?.is_ai ? 'AIメモ' : '思考メモ';
+    if (label) return `${kind}：${label}`;
+    return n.memos?.image_path ? `${kind}：(画像のみ)` : `${kind}：(空)`;
   }
   return '(不明)';
 }
@@ -31,6 +32,9 @@ export default function NodeDetailPanel({
 }) {
   if (!node) return null;
 
+  // AIチャット由来の記録と、手動作成のAIメモの両方をAIメモとして扱う
+  const isAi = node.type === 'AI' || !!node.memos?.is_ai;
+
   const incomingLinks = links.filter((l) => l.target_node_id === node.id);
 
   return (
@@ -38,8 +42,8 @@ export default function NodeDetailPanel({
       <button className="btn-secondary" onClick={onClose} style={{ float: 'right' }}>
         閉じる
       </button>
-      <span className={`badge badge-${node.type === 'AI' ? 'AI' : 'MEMO'}`}>
-        {node.type === 'AI' ? 'AI対話' : '思考メモ'}
+      <span className={`badge badge-${isAi ? 'AI' : 'MEMO'}`}>
+        {isAi ? 'AIメモ' : '思考メモ'}
       </span>
 
       {node.type === 'AI' && (
@@ -70,7 +74,7 @@ export default function NodeDetailPanel({
 
       {node.type === 'MEMO' && (
         <div>
-          <h3>思考メモ</h3>
+          <h3>{isAi ? 'AIメモ' : '思考メモ'}</h3>
           {node.memos?.text && (
             <p style={{ whiteSpace: 'pre-wrap' }}>{node.memos.text}</p>
           )}

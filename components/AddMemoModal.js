@@ -8,7 +8,7 @@ function candidateLabel(item) {
     return `AI回答の一部：「${item.selected_text.slice(0, 40)}」`;
   }
   if (item.type === 'AI') {
-    return `AI対話：${(item.ai_turns?.prompt || '').slice(0, 30)}`;
+    return `AIメモ：${(item.ai_turns?.prompt || '').slice(0, 30)}`;
   }
   // DESIGN は過去セッションの記録。現在は思考メモに統合済みだが、
   // 既存データを選択肢から外さないため残している
@@ -17,9 +17,10 @@ function candidateLabel(item) {
   }
   if (item.type === 'MEMO') {
     const memo = item.memos;
+    const kind = memo?.is_ai ? 'AIメモ' : '思考メモ';
     const label = (memo?.text || '').slice(0, 30);
-    if (label) return `思考メモ：${label}`;
-    return memo?.image_path ? '思考メモ：(画像のみ)' : '思考メモ：(空)';
+    if (label) return `${kind}：${label}`;
+    return memo?.image_path ? `${kind}：(画像のみ)` : `${kind}：(空)`;
   }
   return '(不明なノード)';
 }
@@ -29,9 +30,12 @@ export default function AddMemoModal({
   nodes,
   fragments,
   revisionTarget,
+  isAi = false,
   onClose,
   onCreated,
 }) {
+  // 「AIメモ」と「思考メモ」は仕様・挙動とも同じで、記録する種別だけが異なる
+  const kindLabel = isAi ? 'AIメモ' : '思考メモ';
   const [text, setText] = useState('');
   const [file, setFile] = useState(null);
   const [selected, setSelected] = useState({});
@@ -83,6 +87,7 @@ export default function AddMemoModal({
         node_id: node.id,
         text: text.trim() || null,
         image_path: imagePath,
+        is_ai: isAi,
         revision_parent_id: revisionTarget ? revisionTarget.id : null,
       });
       if (memoErr) throw memoErr;
@@ -105,7 +110,7 @@ export default function AddMemoModal({
           console.error('links insert error:', linkErr);
           onCreated(node.id);
           setError(
-            `思考メモ自体は保存できましたが、関連付け（つながりの線）の保存に失敗しました: ${linkErr.message}`
+            `${kindLabel}自体は保存できましたが、関連付け（つながりの線）の保存に失敗しました: ${linkErr.message}`
           );
           return;
         }
@@ -128,7 +133,7 @@ export default function AddMemoModal({
         onClick={(e) => e.stopPropagation()}
         onSubmit={handleSubmit}
       >
-        <h2>{revisionTarget ? '思考メモを更新' : '思考メモを追加'}</h2>
+        <h2>{revisionTarget ? `${kindLabel}を更新` : `${kindLabel}を追加`}</h2>
 
         <label>
           内容
@@ -136,7 +141,11 @@ export default function AddMemoModal({
             rows={4}
             value={text}
             onChange={(e) => setText(e.target.value)}
-            placeholder="気づき・違和感・判断理由など自由に"
+            placeholder={
+              isAi
+                ? 'AIから得た情報・示唆など自由に'
+                : '気づき・違和感・判断理由など自由に'
+            }
           />
         </label>
 
@@ -149,7 +158,7 @@ export default function AddMemoModal({
           />
         </label>
 
-        <label>この考えは何をもとに生まれましたか？（任意・複数選択可）</label>
+        <label>この記録は何をもとに生まれましたか？（任意・複数選択可）</label>
         <div className="candidate-list">
           {candidates.length === 0 && (
             <p style={{ color: 'var(--text-muted)', fontSize: 'var(--font-sm)' }}>

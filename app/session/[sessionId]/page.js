@@ -23,6 +23,10 @@ export default function SessionPage() {
 
   const [selectedNode, setSelectedNode] = useState(null);
   const [showMemoModal, setShowMemoModal] = useState(false);
+  // 追加するメモの種別（AIメモ／思考メモ）。仕様は同じで記録種別だけが異なる
+  const [memoIsAi, setMemoIsAi] = useState(false);
+  // AIチャット欄の表示・非表示
+  const [showChat, setShowChat] = useState(true);
   const [reviseTarget, setReviseTarget] = useState(null);
 
   const [loadError, setLoadError] = useState(null);
@@ -145,7 +149,7 @@ export default function SessionPage() {
         : node.type === 'DESIGN'
         ? node.designs?.caption
         : node.memos?.text || '(画像のみ)';
-    const label = node.type === 'AI' ? 'AI対話' : '思考メモ';
+    const label = node.type === 'AI' || node.memos?.is_ai ? 'AIメモ' : '思考メモ';
     setPromptInput(`(${label}「${(preview || '').slice(0, 30)}」について) `);
     setPendingLinkSource({ node_id: node.id });
     setSelectedNode(null);
@@ -153,8 +157,27 @@ export default function SessionPage() {
 
   function reviseNode(node) {
     setReviseTarget(node);
+    setMemoIsAi(!!node.memos?.is_ai);
     setShowMemoModal(true);
     setSelectedNode(null);
+  }
+
+  // ノードをダブルクリックして本文を書き換えたときの保存処理。
+  // AIチャット由来の記録（type='AI'）は実際のやり取りそのものなので対象外
+  async function updateMemoText(nodeId, newText) {
+    const node = nodes.find((n) => n.id === nodeId);
+    if (!node || node.type !== 'MEMO') return;
+    try {
+      const { error } = await supabase
+        .from('memos')
+        .update({ text: newText })
+        .eq('node_id', nodeId);
+      if (error) throw error;
+      await loadData();
+    } catch (err) {
+      console.error(err);
+      setErrorMsg(`メモの更新に失敗しました: ${err?.message || err}`);
+    }
   }
 
   async function saveFragment(aiNodeId, text) {
@@ -263,13 +286,18 @@ export default function SessionPage() {
             onDeleteLink={deleteLink}
             onAutoArrange={autoArrangeNodes}
             showAddMemo={condition === 'TOOL'}
-            onAddMemo={() => {
+            onAddMemo={(isAi) => {
               setReviseTarget(null);
+              setMemoIsAi(!!isAi);
               setShowMemoModal(true);
             }}
+            onEditNodeText={updateMemoText}
+            showChat={showChat}
+            onToggleChat={() => setShowChat((v) => !v)}
           />
         </div>
 
+        {showChat && (
         <div className="chat-column">
           {pendingLinkSource && (
             <div className="link-source-banner">
@@ -316,6 +344,7 @@ export default function SessionPage() {
             </button>
           </div>
         </div>
+        )}
       </div>
 
       {showMemoModal && (
@@ -324,9 +353,11 @@ export default function SessionPage() {
           nodes={nodes}
           fragments={fragments}
           revisionTarget={reviseTarget}
+          isAi={memoIsAi}
           onClose={() => {
             setShowMemoModal(false);
             setReviseTarget(null);
+            setMemoIsAi(false);
           }}
           onCreated={handleMemoCreated}
         />

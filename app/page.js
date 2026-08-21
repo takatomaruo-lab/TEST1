@@ -7,7 +7,8 @@ import { supabase } from '../lib/supabaseClient';
 export default function StartPage() {
   const router = useRouter();
   const [label, setLabel] = useState('');
-  const [condition, setCondition] = useState('TOOL');
+  // 利用モードの選択は廃止し、TOOL条件で固定する
+  const condition = 'TOOL';
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -46,7 +47,6 @@ export default function StartPage() {
   return (
     <main className="start-page">
       <form className="card" onSubmit={handleStart}>
-        <h1>設計判断記録ツール</h1>
         <p style={{ color: 'var(--text-muted)', marginTop: 0 }}>
           参加者IDを入力してセッションを開始してください。
         </p>
@@ -57,13 +57,6 @@ export default function StartPage() {
             onChange={(e) => setLabel(e.target.value)}
             placeholder="例: P07"
           />
-        </label>
-        <label>
-          利用モード
-          <select value={condition} onChange={(e) => setCondition(e.target.value)}>
-            <option value="TOOL">TOOL（全機能あり）</option>
-            <option value="CONTROL">CONTROL（AIチャットのみ）</option>
-          </select>
         </label>
         {error && <p className="error">{error}</p>}
         <button className="btn" type="submit" disabled={loading} style={{ width: '100%' }}>

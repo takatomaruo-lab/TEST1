@@ -4,36 +4,37 @@ import { useMemo, useRef, useEffect, useState } from 'react';
 import { ReactFlow, Background, Controls, Panel, Handle, Position } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 
-const LANE_BASE_Y = { AI: 40, DESIGN: 260, MEMO: 480 };
-const ROW_GAP = { AI: 90, DESIGN: 90, MEMO: 110 };
-const COLUMN_WIDTH = 240;
-const COLUMN_MARGIN = 40;
+// レーン（種別ごとのY座標固定）は廃止し、リンク関係から分岐する形で配置する。
+// 種別は色で見分ける。
+const COLUMN_WIDTH = 260; // 1段（depth）あたりの横間隔
+const COLUMN_MARGIN = 40; // 左端の余白
+const TOP_MARGIN = 40;    // 上端の余白
+const ROW_GAP = 44;       // 同じ段に複数ノードが並ぶときの縦間隔
+
 // globals.cssで定義済みのCSS変数を参照し、色の定義をここに重複させない
-const COLOR = { AI: 'var(--ai-color)', DESIGN: 'var(--design-color)' };
+const COLOR = {
+  AI: 'var(--ai-pill)',
+  DESIGN: 'var(--design-pill)',
+  MEMO: 'var(--memo-pill)',
+};
 
 // 参加者画面でのリンクの見た目は1種類に統一(色分け・ラベル表示は廃止)。
 // link_source(できた経緯)は研究者用の内部データとしてDBには引き続き保存される。
 const LINK_STROKE_COLOR = '#9a9a9a';
 
+// ノードに表示する文字数の上限。全文はクリックで詳細パネルに表示する
+const LABEL_MAX_CHARS = 30;
+
 // ハンドルはエッジの接続点計算のためDOM上には残すが、
 // 参加者からは見えず(非表示)、ドラッグ操作もできない(無効化)ようにする。
 const HANDLE_STYLE = {
-  width: 10,
-  height: 10,
+  width: 8,
+  height: 8,
   background: '#fff',
   border: '2px solid #555',
   borderRadius: '50%',
   opacity: 0,
   pointerEvents: 'none',
-};
-
-// 長文ノードの省略表示用(2〜3行に折り返しで切り、クリックで全文はNodeDetailPanel側に表示)
-const CLAMP_STYLE = {
-  display: '-webkit-box',
-  WebkitLineClamp: 3,
-  lineClamp: 3,
-  WebkitBoxOrient: 'vertical',
-  overflow: 'hidden',
 };
 
 function SideHandles() {
@@ -47,16 +48,18 @@ function SideHandles() {
   );
 }
 
-function typeLabelFor(node) {
-  if (node.type === 'AI') return 'AI対話';
-  if (node.type === 'DESIGN') return '設計案';
-  return node.type;
+// 改行・連続空白を1つの空白にまとめ、上限文字数を超える分は「…」で省略する
+function truncate(text) {
+  const t = (text || '').replace(/\s+/g, ' ').trim();
+  if (!t) return '(空)';
+  return t.length > LABEL_MAX_CHARS ? `${t.slice(0, LABEL_MAX_CHARS)}…` : t;
 }
 
 function bodyFor(node) {
-  if (node.type === 'AI') return node.ai_turns?.prompt || '';
-  if (node.type === 'DESIGN') return node.designs?.caption || '(無題)';
-  return '';
+  if (node.type === 'AI') return truncate(node.ai_turns?.prompt);
+  if (node.type === 'DESIGN') return truncate(node.designs?.caption || '(無題)');
+  if (node.type === 'MEMO') return truncate(node.memos?.text);
+  return node.type;
 }
 
 // 簡易フィルタ（P2-2）の検索対象テキスト。AI対話は質問・回答の両方を対象にする
@@ -67,56 +70,30 @@ function searchableText(node) {
   return '';
 }
 
-function MemoNode({ data }) {
+// ピル型ノード。幅は文字数に応じて自動で決まる
+function PillNode({ data }) {
   return (
     <div
       style={{
-        background: 'var(--memo-bg)',
-        border: '1px solid var(--memo-border)',
-        borderRadius: 'var(--radius-sm)',
-        padding: '10px 12px',
-        width: 200,
-        minHeight: 90,
-        boxShadow: '2px 3px 6px rgba(0,0,0,0.18)',
+        background: data.color,
+        color: '#fff',
+        borderRadius: 'var(--radius-pill)',
+        padding: '6px 14px',
         fontSize: 'var(--font-sm)',
-        whiteSpace: 'pre-wrap',
-        wordBreak: 'break-word',
-        transform: 'rotate(-1deg)',
+        lineHeight: 1.4,
+        whiteSpace: 'nowrap',
+        width: 'max-content',
+        boxShadow: '0 1px 3px rgba(0,0,0,0.18)',
       }}
+      title={data.fullText}
     >
       <SideHandles />
-      <div style={{ fontWeight: 700, fontSize: 'var(--font-2xs)', color: 'var(--memo-label-color)', marginBottom: 4 }}>
-        MEMO
-      </div>
-      <div style={CLAMP_STYLE}>{data.body}</div>
+      {data.body}
     </div>
   );
 }
 
-function CardNode({ data }) {
-  return (
-    <div
-      style={{
-        border: `2px solid ${data.color || 'var(--text-muted)'}`,
-        borderRadius: 'var(--radius)',
-        padding: 'var(--space-sm)',
-        background: 'var(--surface)',
-        width: 180,
-        fontSize: 'var(--font-sm)',
-        whiteSpace: 'pre-wrap',
-        textAlign: 'left',
-      }}
-    >
-      <SideHandles />
-      <div style={{ fontWeight: 700, fontSize: 'var(--font-2xs)', color: data.color || 'var(--text-muted)', marginBottom: 4 }}>
-        {data.typeLabel}
-      </div>
-      <div style={CLAMP_STYLE}>{data.body}</div>
-    </div>
-  );
-}
-
-const NODE_TYPES = { memo: MemoNode, card: CardNode };
+const NODE_TYPES = { pill: PillNode };
 
 export default function ProcessMap({
   nodes,
@@ -136,7 +113,7 @@ export default function ProcessMap({
   }, [nodes]);
 
   // Shiftキーを押している間だけキャンバスのパン（左ドラッグ移動）を有効にする。
-  // Shiftを離している間の左ドラッグは、メモなどのノード自体の移動に使う。
+  // Shiftを離している間の左ドラッグは、ノード自体の移動に使う。
   const [panEnabled, setPanEnabled] = useState(false);
   useEffect(() => {
     function handleKeyDown(e) {
@@ -180,13 +157,14 @@ export default function ProcessMap({
     return ids;
   }, [nodes, typeFilter, searchText]);
 
-  // リンク関係(何をもとにしたか)・更新履歴をもとに、各ノードの「段階（depth）」を計算する。
-  // depthが大きいほど右側の列に配置され、依存元より必ず右に来る。
-  // 新しい中間ノードが挿入されると、その後段のノードのdepthも自動的に増え、右へ押し出される。
+  // リンク関係(何をもとにしたか)・更新履歴をもとに自動配置する。
+  // ・横方向：もとにした記録より必ず右の段（depth）に置く
+  // ・縦方向：もとにした記録の高さに寄せ、重なる場合は下へずらす
   const autoLayout = useMemo(() => {
     const nodeById = {};
     nodes.forEach((n) => (nodeById[n.id] = n));
 
+    // 各ノードが「何をもとにしたか」（＝入ってくる線の元）を集める
     const incoming = {};
     nodes.forEach((n) => (incoming[n.id] = []));
     links.forEach((l) => {
@@ -205,6 +183,7 @@ export default function ProcessMap({
       }
     });
 
+    // 段（depth）を計算する。新しい中間ノードが挿入されると後段も自動的に右へ押し出される
     const depthCache = {};
     function depthOf(id, visiting) {
       if (depthCache[id] !== undefined) return depthCache[id];
@@ -219,22 +198,47 @@ export default function ProcessMap({
     }
     nodes.forEach((n) => depthOf(n.id, new Set()));
 
-    // 同じ種別・同じ列(depth)に複数ノードが来る場合は、作成順に縦へ積んで重なりを避ける
-    const sorted = [...nodes].sort(
-      (a, b) => new Date(a.created_at) - new Date(b.created_at)
-    );
-    const rowCounter = {};
-    const positions = {};
-    sorted.forEach((n) => {
-      const depth = depthCache[n.id] ?? 0;
-      const rowKey = `${n.type}:${depth}`;
-      const row = rowCounter[rowKey] ?? 0;
-      rowCounter[rowKey] = row + 1;
-      positions[n.id] = {
-        x: COLUMN_MARGIN + depth * COLUMN_WIDTH,
-        y: (LANE_BASE_Y[n.type] ?? 40) + row * (ROW_GAP[n.type] ?? 90),
-      };
+    // 段ごとにまとめる
+    const columns = {};
+    nodes.forEach((n) => {
+      const d = depthCache[n.id] ?? 0;
+      if (!columns[d]) columns[d] = [];
+      columns[d].push(n);
     });
+    const maxDepth = Object.keys(columns).reduce((a, b) => Math.max(a, Number(b)), 0);
+
+    // 左の段から順に、もとにした記録の高さの平均に寄せて配置する
+    const yById = {};
+    const positions = {};
+    for (let d = 0; d <= maxDepth; d++) {
+      const col = columns[d] || [];
+      const entries = col.map((n) => {
+        const parentYs = (incoming[n.id] || [])
+          .map((pid) => yById[pid])
+          .filter((y) => y !== undefined);
+        const desired = parentYs.length
+          ? parentYs.reduce((s, y) => s + y, 0) / parentYs.length
+          : null;
+        return { node: n, desired };
+      });
+      // もとにした記録がないノード（＝起点）は作成順に、それ以外は寄せたい高さ順に並べる
+      entries.sort((a, b) => {
+        if (a.desired == null && b.desired == null) {
+          return new Date(a.node.created_at) - new Date(b.node.created_at);
+        }
+        if (a.desired == null) return 1;
+        if (b.desired == null) return -1;
+        return a.desired - b.desired;
+      });
+
+      let cursor = TOP_MARGIN;
+      entries.forEach(({ node, desired }) => {
+        const y = Math.max(cursor, desired ?? TOP_MARGIN);
+        yById[node.id] = y;
+        positions[node.id] = { x: COLUMN_MARGIN + d * COLUMN_WIDTH, y };
+        cursor = y + ROW_GAP;
+      });
+    }
     return positions;
   }, [nodes, links, fragments]);
 
@@ -246,22 +250,17 @@ export default function ProcessMap({
           const hasManualPosition = n.position_x != null && n.position_y != null;
           const position = hasManualPosition
             ? { x: n.position_x, y: n.position_y }
-            : autoLayout[n.id] || { x: COLUMN_MARGIN, y: LANE_BASE_Y[n.type] ?? 40 };
-          if (n.type === 'MEMO') {
-            return {
-              id: n.id,
-              type: 'memo',
-              position,
-              draggable: true,
-              data: { body: n.memos?.text || '' },
-            };
-          }
+            : autoLayout[n.id] || { x: COLUMN_MARGIN, y: TOP_MARGIN };
           return {
             id: n.id,
-            type: 'card',
+            type: 'pill',
             position,
-            draggable: n.type === 'DESIGN' || n.type === 'AI',
-            data: { typeLabel: typeLabelFor(n), body: bodyFor(n), color: COLOR[n.type] },
+            draggable: true,
+            data: {
+              body: bodyFor(n),
+              fullText: searchableText(n),
+              color: COLOR[n.type] || 'var(--text-muted)',
+            },
           };
         }),
     [nodes, autoLayout, visibleNodeIds]
@@ -306,7 +305,9 @@ export default function ProcessMap({
           target: l.target_node_id,
           sourceHandle,
           targetHandle,
-          style: { stroke: LINK_STROKE_COLOR, strokeWidth: 2 },
+          type: 'smoothstep',
+          pathOptions: { borderRadius: 12 },
+          style: { stroke: LINK_STROKE_COLOR, strokeWidth: 1.5 },
         };
       })
       .filter(Boolean);
@@ -328,8 +329,10 @@ export default function ProcessMap({
           target: n.id,
           sourceHandle,
           targetHandle,
+          type: 'smoothstep',
+          pathOptions: { borderRadius: 12 },
           label: '更新',
-          style: { strokeDasharray: '4 4' },
+          style: { stroke: LINK_STROKE_COLOR, strokeWidth: 1.5, strokeDasharray: '4 4' },
           selectable: false,
         };
       });
@@ -348,8 +351,9 @@ export default function ProcessMap({
     if (!focusRequest || !rfInstanceRef.current) return;
     const target = flowNodes.find((n) => n.id === focusRequest.nodeId);
     if (target) {
-      const width = target.type === 'memo' ? 200 : 180;
-      const height = target.type === 'memo' ? 90 : 60;
+      // ピルの幅は文字数から概算する（1文字あたり約12px＋左右の余白）
+      const width = (target.data.body?.length || 0) * 12 + 28;
+      const height = 30;
       rfInstanceRef.current.setCenter(
         target.position.x + width / 2,
         target.position.y + height / 2,
@@ -415,6 +419,7 @@ export default function ProcessMap({
                 checked={typeFilter.AI}
                 onChange={() => toggleTypeFilter('AI')}
               />
+              <span className="map-filter-swatch map-filter-swatch-AI" />
               AI対話
             </label>
             <label className="map-filter-checkbox">
@@ -423,6 +428,7 @@ export default function ProcessMap({
                 checked={typeFilter.DESIGN}
                 onChange={() => toggleTypeFilter('DESIGN')}
               />
+              <span className="map-filter-swatch map-filter-swatch-DESIGN" />
               設計案
             </label>
             <label className="map-filter-checkbox">
@@ -431,6 +437,7 @@ export default function ProcessMap({
                 checked={typeFilter.MEMO}
                 onChange={() => toggleTypeFilter('MEMO')}
               />
+              <span className="map-filter-swatch map-filter-swatch-MEMO" />
               思考メモ
             </label>
           </div>

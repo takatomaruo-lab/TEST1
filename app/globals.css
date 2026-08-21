@@ -9,9 +9,11 @@
   --ai-color: #3554d1;
   --design-color: #1f9d6b;
   --memo-color: #b8860b;
-  --memo-bg: #fff6c8;
-  --memo-border: #e8d488;
-  --memo-label-color: #8a6d00;
+
+  /* プロセスマップのピル型ノード用（白文字とのコントラストを確保した濃いめの値） */
+  --ai-pill: #2f49b8;
+  --design-pill: #177952;
+  --memo-pill: #8a6d00;
 
   /* 角丸 */
   --radius: 8px;
@@ -154,14 +156,6 @@ label {
   background: #f0f3ff;
   border-radius: var(--radius);
   padding: 10px var(--space-md);
-}
-
-.text-clamp-3 {
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
 }
 
 .chat-input-row {
@@ -370,3 +364,13 @@ label {
 .map-filter-checkbox input[type="checkbox"] {
   width: auto;
 }
+/* 種別ごとの色見本。マップ上のピルの色と対応させ、凡例を兼ねる */
+.map-filter-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: var(--radius-pill);
+  flex-shrink: 0;
+}
+.map-filter-swatch-AI { background: var(--ai-pill); }
+.map-filter-swatch-DESIGN { background: var(--design-pill); }
+.map-filter-swatch-MEMO { background: var(--memo-pill); }

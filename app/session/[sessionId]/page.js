@@ -225,6 +225,20 @@ export default function SessionPage() {
     }
   }
 
+  // 「自動整列」ボタン：全ノードの手動位置を解除し、接続関係・作成時刻ベースの自動配置に戻す
+  async function autoArrangeNodes() {
+    try {
+      const { error } = await supabase
+        .from('nodes')
+        .update({ position_x: null, position_y: null })
+        .eq('session_id', sessionId);
+      if (error) console.error('auto-arrange error:', error);
+      await loadData();
+    } catch (err) {
+      console.error(err);
+    }
+  }
+
   async function deleteLink(linkId) {
     await supabase.from('links').update({ deleted_at: new Date().toISOString() }).eq('id', linkId);
     await supabase.from('link_logs').insert({ link_id: linkId, action: 'DELETED' });
@@ -259,8 +273,8 @@ export default function SessionPage() {
                   onClick={() => openNodeDetail(n)}
                   style={{ cursor: 'pointer' }}
                 >
-                  <div className="chat-prompt">{n.ai_turns?.prompt}</div>
-                  <div className="chat-response">{n.ai_turns?.response}</div>
+                  <div className="chat-prompt text-clamp-3">{n.ai_turns?.prompt}</div>
+                  <div className="chat-response text-clamp-3">{n.ai_turns?.response}</div>
                 </div>
               ))}
             {nodes.filter((n) => n.type === 'AI').length === 0 && (
@@ -297,6 +311,7 @@ export default function SessionPage() {
             onNodeDragEnd={updateNodePosition}
             onManualConnect={createManualLink}
             onDeleteLink={deleteLink}
+            onAutoArrange={autoArrangeNodes}
           />
         </div>
       </div>

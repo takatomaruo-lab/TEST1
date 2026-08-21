@@ -125,13 +125,21 @@ label {
   gap: 16px;
 }
 
-.chat-turn { display: flex; flex-direction: column; gap: 6px; }
+.chat-turn { display: flex; flex-direction: column; gap: 6px; cursor: pointer; }
 .chat-prompt { font-weight: 600; color: var(--text); }
 .chat-response {
   white-space: pre-wrap;
   background: #f0f3ff;
   border-radius: var(--radius);
   padding: 10px 12px;
+}
+
+.text-clamp-3 {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .chat-input-row {

@@ -1,18 +1,25 @@
 :root {
-  --bg: #f6f7f9;
-  --surface: #ffffff;
-  --border: #dfe3e8;
-  --text: #1f2430;
-  --text-muted: #6b7280;
-  --accent: #3554d1;
-  --accent-hover: #2a44ad;
-  --ai-color: #3554d1;
-  --design-color: #1f9d6b;
-  --memo-color: #b8860b;
+  /* パレット（4色） */
+  --pal-light: #C3E7F1;    /* ライトブルー */
+  --pal-moonstone: #519CAB; /* ムーンストーン */
+  --pal-saffron: #FFC64F;   /* サフラン */
+  --pal-gunmetal: #20373B;  /* ガンメタル */
 
-  /* プロセスマップのピル型ノード用（白文字とのコントラストを確保した濃いめの値） */
-  --ai-pill: #2f49b8;
-  --memo-pill: #8a6d00;
+  --bg: #eaf4f8;
+  --surface: #ffffff;
+  --border: #cfe2e9;
+  --text: var(--pal-gunmetal);
+  --text-muted: #5e7a80;
+  --accent: var(--pal-moonstone);
+  --accent-hover: #43848f;
+
+  /* ノードの色。ProcessMap.js の PALETTE と必ず同じ値にすること */
+  --ai-pill: var(--pal-saffron);
+  --memo-pill: var(--pal-moonstone);
+  --pill-text: var(--pal-gunmetal);
+
+  --ai-color: var(--pal-saffron);
+  --memo-color: var(--pal-moonstone);
 
   /* 角丸 */
   --radius: 8px;
@@ -152,7 +159,7 @@ label {
 .chat-prompt { font-weight: 600; color: var(--text); }
 .chat-response {
   white-space: pre-wrap;
-  background: #f0f3ff;
+  background: var(--pal-light);
   border-radius: var(--radius);
   padding: 10px var(--space-md);
 }
@@ -251,9 +258,8 @@ label {
   color: #fff;
   margin-bottom: var(--space-sm);
 }
-.badge-AI { background: var(--ai-color); }
-.badge-DESIGN { background: var(--design-color); }
-.badge-MEMO { background: var(--memo-color); }
+.badge-AI { background: var(--ai-color); color: var(--pal-gunmetal); }
+.badge-MEMO { background: var(--memo-color); color: var(--pal-gunmetal); }
 
 .design-image {
   max-width: 100%;
@@ -371,4 +377,46 @@ label {
   width: 100%;
   font-size: var(--font-sm);
   padding: 6px var(--space-md);
+}
+
+/* プロセスマップのピル型ノード。AIメモ・思考メモとも同じ形・同じ文字色で塗りだけ変える */
+.pill-node {
+  color: var(--pill-text);
+  border-radius: var(--radius-pill);
+  padding: 6px 14px;
+  font-size: var(--font-sm);
+  font-weight: 600;
+  line-height: 1.4;
+  white-space: nowrap;
+  width: max-content;
+  box-shadow: 0 1px 3px rgba(32, 55, 59, 0.22);
+}
+
+/* つながりの線を引くためのハンドル。普段は控えめで、ノードに触れると出てくる */
+.react-flow__handle.pill-handle {
+  width: 10px;
+  height: 10px;
+  background: var(--surface);
+  border: 2px solid var(--pal-gunmetal);
+  border-radius: 50%;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.react-flow__node:hover .react-flow__handle.pill-handle,
+.react-flow__handle.pill-handle.connectingfrom,
+.react-flow__handle.pill-handle.connectingto {
+  opacity: 1;
+}
+.react-flow__handle.pill-handle:hover {
+  background: var(--pal-gunmetal);
+}
+
+/* マップ下部の操作ヒント */
+.map-hint {
+  margin: 0;
+  font-size: var(--font-xs);
+  color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.85);
+  border-radius: var(--radius-pill);
+  padding: 4px var(--space-md);
 }

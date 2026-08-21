@@ -188,7 +188,6 @@ export default function SessionPage() {
   }
 
   // ハンドル同士をドラッグしてつないだ時の保存処理
-  // （TOOL条件では非表示・無効化済みだが、内部ロジックとして維持）
   async function createManualLink(sourceNodeId, targetNodeId) {
     // source_node_idとtarget_node_idの組が完全一致する場合のみ重複とみなす
     // （A→BとB→Aは意味が異なる別リンクとして扱う）

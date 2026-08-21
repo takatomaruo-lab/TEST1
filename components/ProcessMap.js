@@ -1,7 +1,16 @@
 "use client";
 
 import { useMemo, useRef, useEffect, useState } from 'react';
-import { ReactFlow, Background, Controls, Panel, Handle, Position } from '@xyflow/react';
+import {
+  ReactFlow,
+  Background,
+  Controls,
+  Panel,
+  Handle,
+  Position,
+  BaseEdge,
+  getSmoothStepPath,
+} from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 
 // レーン（種別ごとのY座標固定）は廃止し、リンク関係から分岐する形で配置する。
@@ -11,41 +20,33 @@ const COLUMN_MARGIN = 40; // 左端の余白
 const TOP_MARGIN = 40;    // 上端の余白
 const ROW_GAP = 44;       // 同じ段に複数ノードが並ぶときの縦間隔
 
-// globals.cssで定義済みのCSS変数を参照し、色の定義をここに重複させない
-// 種別は「AI対話」「思考メモ」の2種類。
-// DESIGNは過去セッションの記録で、現在は思考メモに統合済みのため同じ色で表示する
-const COLOR = {
-  AI: 'var(--ai-pill)',
-  DESIGN: 'var(--memo-pill)',
-  MEMO: 'var(--memo-pill)',
+// パレット（AIメモ=サフラン／思考メモ=ムーンストーン／文字=ガンメタル）。
+// 線のグラデーション計算に実際の色値が必要なため、ここではCSS変数ではなく実値を持つ。
+// globals.css側の --ai-pill / --memo-pill と必ず同じ値にすること。
+const PALETTE = {
+  saffron: '#FFC64F',
+  moonstone: '#519CAB',
+  gunmetal: '#20373B',
 };
 
-// 参加者画面でのリンクの見た目は1種類に統一(色分け・ラベル表示は廃止)。
-// link_source(できた経緯)は研究者用の内部データとしてDBには引き続き保存される。
-const LINK_STROKE_COLOR = '#9a9a9a';
+// 種別は「AIメモ」「思考メモ」の2種類。
+// DESIGNは過去セッションの記録で、思考メモに統合済みのため同じ色で表示する
+const COLOR = {
+  AI: PALETTE.saffron,
+  DESIGN: PALETTE.moonstone,
+  MEMO: PALETTE.moonstone,
+};
 
 // ノードに表示する文字数の上限。全文はクリックで詳細パネルに表示する
 const LABEL_MAX_CHARS = 30;
 
-// ハンドルはエッジの接続点計算のためDOM上には残すが、
-// 参加者からは見えず(非表示)、ドラッグ操作もできない(無効化)ようにする。
-const HANDLE_STYLE = {
-  width: 8,
-  height: 8,
-  background: '#fff',
-  border: '2px solid #555',
-  borderRadius: '50%',
-  opacity: 0,
-  pointerEvents: 'none',
-};
-
 function SideHandles() {
   return (
     <>
-      <Handle type="target" position={Position.Left} id="left-target" style={HANDLE_STYLE} isConnectable={false} />
-      <Handle type="source" position={Position.Left} id="left-source" style={HANDLE_STYLE} isConnectable={false} />
-      <Handle type="target" position={Position.Right} id="right-target" style={HANDLE_STYLE} isConnectable={false} />
-      <Handle type="source" position={Position.Right} id="right-source" style={HANDLE_STYLE} isConnectable={false} />
+      <Handle type="target" position={Position.Left} id="left-target" className="pill-handle" />
+      <Handle type="source" position={Position.Left} id="left-source" className="pill-handle" />
+      <Handle type="target" position={Position.Right} id="right-target" className="pill-handle" />
+      <Handle type="source" position={Position.Right} id="right-source" className="pill-handle" />
     </>
   );
 }
@@ -68,7 +69,7 @@ function bodyFor(node) {
   return node.type;
 }
 
-// 簡易フィルタ（P2-2）の検索対象テキスト。AI対話は質問・回答の両方を対象にする
+// 簡易フィルタの検索対象テキスト。AIメモは質問・回答の両方を対象にする
 function searchableText(node) {
   if (node.type === 'AI') return `${node.ai_turns?.prompt || ''} ${node.ai_turns?.response || ''}`;
   if (node.type === 'DESIGN') return node.designs?.caption || '';
@@ -83,21 +84,12 @@ function revisionParentOf(node) {
   return null;
 }
 
-// ピル型ノード。幅は文字数に応じて自動で決まる
+// ピル型ノード。AIメモ・思考メモとも同じ形・同じ文字色で、塗りの色だけが異なる
 function PillNode({ data }) {
   return (
     <div
-      style={{
-        background: data.color,
-        color: '#fff',
-        borderRadius: 'var(--radius-pill)',
-        padding: '6px 14px',
-        fontSize: 'var(--font-sm)',
-        lineHeight: 1.4,
-        whiteSpace: 'nowrap',
-        width: 'max-content',
-        boxShadow: '0 1px 3px rgba(0,0,0,0.18)',
-      }}
+      className="pill-node"
+      style={{ background: data.color }}
       title={data.fullText}
     >
       <SideHandles />
@@ -106,7 +98,67 @@ function PillNode({ data }) {
   );
 }
 
+// 線の色。同じ種別同士はその種別の色、種別をまたぐ場合は
+// 「始点＝始点ノードの色、終点＝終点ノードの色」になるグラデーションを引く
+function GradientEdge({
+  id,
+  sourceX,
+  sourceY,
+  targetX,
+  targetY,
+  sourcePosition,
+  targetPosition,
+  data,
+  selected,
+}) {
+  const [path] = getSmoothStepPath({
+    sourceX,
+    sourceY,
+    targetX,
+    targetY,
+    sourcePosition,
+    targetPosition,
+    borderRadius: 12,
+  });
+
+  const fromColor = data?.fromColor || PALETTE.gunmetal;
+  const toColor = data?.toColor || PALETTE.gunmetal;
+  const needsGradient = fromColor !== toColor;
+  const gradientId = `edge-gradient-${id}`;
+
+  return (
+    <>
+      {needsGradient && (
+        <defs>
+          {/* userSpaceOnUse で実座標を指定し、線の向きと色の向きを一致させる */}
+          <linearGradient
+            id={gradientId}
+            gradientUnits="userSpaceOnUse"
+            x1={sourceX}
+            y1={sourceY}
+            x2={targetX}
+            y2={targetY}
+          >
+            <stop offset="0%" stopColor={fromColor} />
+            <stop offset="100%" stopColor={toColor} />
+          </linearGradient>
+        </defs>
+      )}
+      <BaseEdge
+        id={id}
+        path={path}
+        style={{
+          stroke: needsGradient ? `url(#${gradientId})` : fromColor,
+          strokeWidth: selected ? 4 : 2.5,
+          strokeDasharray: data?.dashed ? '5 4' : undefined,
+        }}
+      />
+    </>
+  );
+}
+
 const NODE_TYPES = { pill: PillNode };
+const EDGE_TYPES = { gradient: GradientEdge };
 
 export default function ProcessMap({
   nodes,
@@ -127,33 +179,10 @@ export default function ProcessMap({
     return m;
   }, [nodes]);
 
-  // Shiftキーを押している間だけキャンバスのパン（左ドラッグ移動）を有効にする。
-  // Shiftを離している間の左ドラッグは、ノード自体の移動に使う。
-  const [panEnabled, setPanEnabled] = useState(false);
-  useEffect(() => {
-    function handleKeyDown(e) {
-      if (e.key === 'Shift') setPanEnabled(true);
-    }
-    function handleKeyUp(e) {
-      if (e.key === 'Shift') setPanEnabled(false);
-    }
-    function handleBlur() {
-      setPanEnabled(false);
-    }
-    window.addEventListener('keydown', handleKeyDown);
-    window.addEventListener('keyup', handleKeyUp);
-    window.addEventListener('blur', handleBlur);
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-      window.removeEventListener('keyup', handleKeyUp);
-      window.removeEventListener('blur', handleBlur);
-    };
-  }, []);
-
   // 選択中の線（クリック→Deleteキーで消すため）
   const [selectedEdgeId, setSelectedEdgeId] = useState(null);
 
-  // 簡易フィルタ（P2-2）：種別の表示/非表示とキーワード検索
+  // 簡易フィルタ：種別の表示/非表示とキーワード検索
   const [typeFilter, setTypeFilter] = useState({ AI: true, MEMO: true });
   const [searchText, setSearchText] = useState('');
 
@@ -275,7 +304,7 @@ export default function ProcessMap({
             data: {
               body: bodyFor(n),
               fullText: searchableText(n),
-              color: COLOR[n.type] || 'var(--text-muted)',
+              color: COLOR[n.type] || PALETTE.gunmetal,
             },
           };
         }),
@@ -300,6 +329,11 @@ export default function ProcessMap({
     };
   }
 
+  function colorOf(nodeId) {
+    const n = nodeMap[nodeId];
+    return (n && COLOR[n.type]) || PALETTE.gunmetal;
+  }
+
   const flowEdges = useMemo(() => {
     const linkEdges = links
       .map((l) => {
@@ -321,9 +355,11 @@ export default function ProcessMap({
           target: l.target_node_id,
           sourceHandle,
           targetHandle,
-          type: 'smoothstep',
-          pathOptions: { borderRadius: 12 },
-          style: { stroke: LINK_STROKE_COLOR, strokeWidth: 1.5 },
+          type: 'gradient',
+          data: {
+            fromColor: colorOf(sourceId),
+            toColor: colorOf(l.target_node_id),
+          },
         };
       })
       .filter(Boolean);
@@ -342,11 +378,14 @@ export default function ProcessMap({
           target: n.id,
           sourceHandle,
           targetHandle,
-          type: 'smoothstep',
-          pathOptions: { borderRadius: 12 },
+          type: 'gradient',
           label: '更新',
-          style: { stroke: LINK_STROKE_COLOR, strokeWidth: 1.5, strokeDasharray: '4 4' },
           selectable: false,
+          data: {
+            fromColor: colorOf(parentId),
+            toColor: colorOf(n.id),
+            dashed: true,
+          },
         };
       });
 
@@ -380,13 +419,15 @@ export default function ProcessMap({
       nodes={flowNodes}
       edges={edgesForFlow}
       nodeTypes={NODE_TYPES}
+      edgeTypes={EDGE_TYPES}
       nodesDraggable={false}
-      nodesConnectable={false}
+      nodesConnectable={true}
       elementsSelectable={true}
       edgesUpdatable={false}
-      panOnDrag={panEnabled}
+      panOnDrag={true}
       selectionKeyCode={null}
       deleteKeyCode={['Backspace', 'Delete']}
+      connectionLineStyle={{ stroke: PALETTE.gunmetal, strokeWidth: 2.5 }}
       onInit={(instance) => {
         rfInstanceRef.current = instance;
       }}
@@ -415,7 +456,7 @@ export default function ProcessMap({
       }}
       fitView
     >
-      <Background />
+      <Background color="#9dc4d0" gap={20} />
       <Controls showInteractive={false} />
       <Panel position="top-left">
         <div className="map-filter">
@@ -433,7 +474,7 @@ export default function ProcessMap({
                 onChange={() => toggleTypeFilter('AI')}
               />
               <span className="map-filter-swatch map-filter-swatch-AI" />
-              AI対話
+              AIメモ
             </label>
             <label className="map-filter-checkbox">
               <input
@@ -461,6 +502,11 @@ export default function ProcessMap({
         >
           自動整列
         </button>
+      </Panel>
+      <Panel position="bottom-center">
+        <p className="map-hint">
+          ノードの左右の丸をドラッグすると、つながりの線を引けます／線をクリックしてDeleteキーで削除
+        </p>
       </Panel>
     </ReactFlow>
   );

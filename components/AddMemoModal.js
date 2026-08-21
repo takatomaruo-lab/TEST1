@@ -67,23 +67,6 @@ export default function AddMemoModal({ sessionId, nodes, fragments, onClose, onC
           });
         }
       }
-      // 直前の思考メモがあれば、関係性がわかるように自動でリンクする
-      // （すでに手動でチェック選択されている場合は重複させない）
-      const memoNodes = nodes
-        .filter((n) => n.type === 'MEMO')
-        .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
-      const prevMemo = memoNodes[memoNodes.length - 1];
-      const prevMemoAlreadySelected =
-        prevMemo && selected[`node:${prevMemo.id}`];
-      if (prevMemo && !prevMemoAlreadySelected) {
-        linkRows.push({
-          source_node_id: prevMemo.id,
-          source_fragment_id: null,
-          target_node_id: node.id,
-          link_source: 'auto_chain',
-        });
-      }
-
       if (linkRows.length > 0) {
         const { error: linkErr } = await supabase.from('links').insert(linkRows);
         if (linkErr) {

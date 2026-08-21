@@ -7,30 +7,29 @@ import '@xyflow/react/dist/style.css';
 const LANE_Y = { AI: 40, DESIGN: 260, MEMO: 480 };
 const COLOR = { AI: '#3554d1', DESIGN: '#1f9d6b' };
 
-// リンクの「できた経緯」ごとの色分け設定
-const LINK_STYLE = {
-  auto_chain: { stroke: '#c9a227', label: '関連' }, // 直前メモとの自動リンク
-  manual_draw: { stroke: '#2f6fed', label: '手動' }, // ハンドルをドラッグして手動作成
-  consult_ai: { stroke: '#8a3fd1', label: '相談' }, // 「AIに相談」から生成
-  reference: { stroke: '#9a9a9a', label: '参照' }, // 作成時のチェックボックス選択
-  ai_adopt: { stroke: '#0e9488', label: '採用' }, // AI提案を番号指定で採用
-};
+// 参加者画面でのリンクの見た目は1種類に統一（色分け・ラベル表示は廃止）。
+// link_source（できた経緯）は研究者用の内部データとしてDBには引き続き保存される。
+const LINK_STROKE_COLOR = '#9a9a9a';
 
+// ハンドルはエッジの接続点計算のためDOM上には残すが、
+// 参加者からは見えず（非表示）、ドラッグ操作もできない（無効化）ようにする。
 const HANDLE_STYLE = {
   width: 10,
   height: 10,
   background: '#fff',
   border: '2px solid #555',
   borderRadius: '50%',
+  opacity: 0,
+  pointerEvents: 'none',
 };
 
 function SideHandles() {
   return (
     <>
-      <Handle type="target" position={Position.Left} id="left-target" style={HANDLE_STYLE} />
-      <Handle type="source" position={Position.Left} id="left-source" style={HANDLE_STYLE} />
-      <Handle type="target" position={Position.Right} id="right-target" style={HANDLE_STYLE} />
-      <Handle type="source" position={Position.Right} id="right-source" style={HANDLE_STYLE} />
+      <Handle type="target" position={Position.Left} id="left-target" style={HANDLE_STYLE} isConnectable={false} />
+      <Handle type="source" position={Position.Left} id="left-source" style={HANDLE_STYLE} isConnectable={false} />
+      <Handle type="target" position={Position.Right} id="right-target" style={HANDLE_STYLE} isConnectable={false} />
+      <Handle type="source" position={Position.Right} id="right-source" style={HANDLE_STYLE} isConnectable={false} />
     </>
   );
 }
@@ -184,16 +183,13 @@ export default function ProcessMap({
     const linkEdges = links
       .map((l) => {
         let sourceId = l.source_node_id;
-        let isFragment = false;
         if (!sourceId && l.source_fragment_id) {
           const frag = fragments.find((f) => f.id === l.source_fragment_id);
           sourceId = frag?.ai_node_id;
-          isFragment = true;
         }
         if (!sourceId || !nodeMap[sourceId] || !nodeMap[l.target_node_id]) {
           return null;
         }
-        const meta = LINK_STYLE[l.link_source] || LINK_STYLE.reference;
         const { sourceHandle, targetHandle } = pickHandles(sourceId, l.target_node_id);
         return {
           id: `link-${l.id}`,
@@ -201,9 +197,7 @@ export default function ProcessMap({
           target: l.target_node_id,
           sourceHandle,
           targetHandle,
-          label: isFragment && l.link_source !== 'ai_adopt' ? '一部' : meta.label,
-          style: { stroke: meta.stroke, strokeWidth: 2.5 },
-          labelStyle: { fill: meta.stroke, fontSize: 11, fontWeight: 700 },
+          style: { stroke: LINK_STROKE_COLOR, strokeWidth: 2 },
         };
       })
       .filter(Boolean);
@@ -258,7 +252,7 @@ export default function ProcessMap({
       edges={edgesForFlow}
       nodeTypes={NODE_TYPES}
       nodesDraggable={false}
-      nodesConnectable={true}
+      nodesConnectable={false}
       elementsSelectable={true}
       edgesUpdatable={false}
       panOnDrag={panEnabled}

@@ -498,3 +498,153 @@ label {
 .pill-edit-input:focus {
   outline: 2px solid #ffffff;
 }
+
+/* ─────────────────────────────────────────────
+   AIチャットのモード選択（参考／提案／整理／批評）
+   ───────────────────────────────────────────── */
+
+.chat-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-md) 0;
+}
+
+/* モード選択（プルダウン） */
+.mode-picker {
+  position: relative;
+}
+.mode-picker-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  padding: 5px var(--space-md);
+  font-size: var(--font-sm);
+  font-weight: 700;
+  line-height: 1.4;
+}
+.mode-picker-btn:hover { border-color: var(--accent); }
+.mode-picker-label { color: var(--text); }
+.mode-caret { font-size: var(--font-2xs); color: var(--text-muted); }
+
+.mode-menu {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  margin: 0;
+  padding: var(--space-xs);
+  list-style: none;
+  min-width: 230px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 6px 18px rgba(32, 55, 59, 0.18);
+  z-index: 45;
+}
+.mode-menu li { margin: 0; }
+.mode-menu-item {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 6px var(--space-sm);
+}
+.mode-menu-item:hover { background: var(--pal-light); }
+.mode-menu-item.is-active { background: var(--pal-light); }
+.mode-menu-label {
+  font-size: var(--font-md);
+  font-weight: 700;
+  color: var(--text);
+}
+.mode-menu-item.is-active .mode-menu-label::after {
+  content: ' ✓';
+  color: var(--accent);
+}
+.mode-menu-hint {
+  font-size: var(--font-xs);
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+/* チャット履歴・詳細パネルに出す小さなモード表示 */
+.mode-tag {
+  display: inline-block;
+  font-size: var(--font-2xs);
+  font-weight: 700;
+  color: var(--pal-gunmetal);
+  background: var(--ai-pill);
+  border-radius: var(--radius-pill);
+  padding: 1px var(--space-sm);
+  margin-right: 6px;
+  vertical-align: 2px;
+}
+
+/* 参照する記録を選ぶボタンと一覧 */
+.context-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--surface);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  padding: 5px var(--space-md);
+  font-size: var(--font-sm);
+  line-height: 1.4;
+}
+.context-btn:hover { border-color: var(--accent); }
+.context-btn.is-on {
+  color: var(--pal-gunmetal);
+  border-color: var(--accent);
+  background: var(--pal-light);
+  font-weight: 700;
+}
+
+.context-picker {
+  margin: var(--space-sm) var(--space-md) 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--space-sm);
+  max-height: 180px;
+  overflow-y: auto;
+  background: var(--surface);
+}
+.context-item {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: var(--space-sm);
+  margin-bottom: 2px;
+  padding: 3px 2px;
+  font-size: var(--font-sm);
+  color: var(--text);
+  cursor: pointer;
+}
+.context-item input[type="checkbox"] {
+  width: auto;
+  margin-top: 3px;
+  flex-shrink: 0;
+}
+.context-clear {
+  margin-top: var(--space-xs);
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-size: var(--font-xs);
+  padding: 2px 0;
+  text-decoration: underline;
+}
+
+.chat-note {
+  margin: var(--space-sm) var(--space-md) 0;
+  font-size: var(--font-xs);
+  color: var(--text-muted);
+}

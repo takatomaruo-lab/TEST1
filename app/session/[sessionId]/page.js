@@ -1,11 +1,52 @@
 "use client";
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams } from 'next/navigation';
 import { supabase } from '../../../lib/supabaseClient';
 import ProcessMap from '../../../components/ProcessMap';
 import AddMemoModal from '../../../components/AddMemoModal';
 import NodeDetailPanel from '../../../components/NodeDetailPanel';
+import { AI_MODES, DEFAULT_MODE_ID, getMode } from '../../../lib/aiModes';
+
+// 「参照する記録」の一覧に出す短いラベル
+function contextLabel(item) {
+  if (item.kind === 'fragment') {
+    return `AI回答の一部：「${(item.selected_text || '').slice(0, 34)}」`;
+  }
+  if (item.type === 'AI') {
+    return `AIメモ：${(item.ai_turns?.prompt || '').slice(0, 26)}`;
+  }
+  if (item.type === 'DESIGN') {
+    return `思考メモ：${item.designs?.caption || '(無題)'}`;
+  }
+  if (item.type === 'MEMO') {
+    const kind = item.memos?.is_ai ? 'AIメモ' : '思考メモ';
+    const label = (item.memos?.text || '').slice(0, 26);
+    if (label) return `${kind}：${label}`;
+    return item.memos?.image_path ? `${kind}：(画像のみ)` : `${kind}：(空)`;
+  }
+  return '(不明な記録)';
+}
+
+// AIに渡す本文。ラベルより長く、内容そのものを渡す
+function contextFullText(item) {
+  if (item.kind === 'fragment') return item.selected_text || '';
+  if (item.type === 'AI') {
+    const p = item.ai_turns?.prompt || '';
+    const r = item.ai_turns?.response || '';
+    return `（質問）${p}\n（AIの回答）${r}`;
+  }
+  if (item.type === 'DESIGN') return item.designs?.caption || '';
+  if (item.type === 'MEMO') return item.memos?.text || '';
+  return '';
+}
+
+function contextKind(item) {
+  if (item.kind === 'fragment') return 'AI回答の一部';
+  if (item.type === 'AI') return 'AIメモ';
+  if (item.type === 'MEMO') return item.memos?.is_ai ? 'AIメモ' : '思考メモ';
+  return '思考メモ';
+}
 
 export default function SessionPage() {
   const params = useParams();
@@ -19,7 +60,15 @@ export default function SessionPage() {
 
   const [promptInput, setPromptInput] = useState('');
   const [sending, setSending] = useState(false);
-  const [pendingLinkSource, setPendingLinkSource] = useState(null);
+
+  // AIチャットのモード（参考／提案／整理／批評）。送信ごとに切り替えられる
+  const [mode, setMode] = useState(DEFAULT_MODE_ID);
+  const [modeMenuOpen, setModeMenuOpen] = useState(false);
+  const modePickerRef = useRef(null);
+
+  // 「参照する記録」の選択状態。キーは `node:<id>` / `fragment:<id>`
+  const [contextSelected, setContextSelected] = useState({});
+  const [showContextPicker, setShowContextPicker] = useState(false);
 
   const [selectedNode, setSelectedNode] = useState(null);
   const [showMemoModal, setShowMemoModal] = useState(false);
@@ -32,6 +81,8 @@ export default function SessionPage() {
   const [loadError, setLoadError] = useState(null);
   const [memoToast, setMemoToast] = useState(null);
   const [focusRequest, setFocusRequest] = useState(null);
+
+  const currentMode = getMode(mode);
 
   const loadCondition = useCallback(async () => {
     const { data } = await supabase
@@ -100,9 +151,42 @@ export default function SessionPage() {
     loadData();
   }, [sessionId, loadCondition, loadData]);
 
+  // モード選択メニューを外側クリックで閉じる
+  useEffect(() => {
+    if (!modeMenuOpen) return;
+    function onDocClick(e) {
+      if (modePickerRef.current && !modePickerRef.current.contains(e.target)) {
+        setModeMenuOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', onDocClick);
+    return () => document.removeEventListener('mousedown', onDocClick);
+  }, [modeMenuOpen]);
+
+  // 参照候補（既存ノード＋AI回答の一部）
+  const contextCandidates = [
+    ...nodes.map((n) => ({ kind: 'node', ...n })),
+    ...fragments.map((f) => ({ kind: 'fragment', ...f })),
+  ];
+  const contextKeyOf = (c) => (c.kind === 'fragment' ? `fragment:${c.id}` : `node:${c.id}`);
+  const selectedCount = Object.values(contextSelected).filter(Boolean).length;
+
+  function toggleContext(key) {
+    setContextSelected((prev) => ({ ...prev, [key]: !prev[key] }));
+  }
+
   async function handleSend() {
     const trimmed = promptInput.trim();
     if (!trimmed || sending) return;
+
+    const contextItems = contextCandidates
+      .filter((c) => contextSelected[contextKeyOf(c)])
+      .map((c) => ({
+        node_id: c.kind === 'fragment' ? null : c.id,
+        fragment_id: c.kind === 'fragment' ? c.id : null,
+        label: contextKind(c),
+        text: contextFullText(c),
+      }));
 
     setSending(true);
     try {
@@ -113,13 +197,15 @@ export default function SessionPage() {
           sessionId,
           prompt: trimmed,
           history: chatHistory,
-          linkSource: pendingLinkSource,
+          mode,
+          contextItems,
         }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'failed');
       setPromptInput('');
-      setPendingLinkSource(null);
+      setContextSelected({});
+      setShowContextPicker(false);
       await loadData();
     } catch (err) {
       console.error(err);
@@ -142,16 +228,12 @@ export default function SessionPage() {
     }
   }
 
+  // 詳細パネルの「これについてAIに相談」。
+  // そのノードを「参照する記録」に加えたうえでチャット欄に誘導する
   function consultAI(node) {
-    const preview =
-      node.type === 'AI'
-        ? node.ai_turns?.prompt
-        : node.type === 'DESIGN'
-        ? node.designs?.caption
-        : node.memos?.text || '(画像のみ)';
-    const label = node.type === 'AI' || node.memos?.is_ai ? 'AIメモ' : '思考メモ';
-    setPromptInput(`(${label}「${(preview || '').slice(0, 30)}」について) `);
-    setPendingLinkSource({ node_id: node.id });
+    setContextSelected((prev) => ({ ...prev, [`node:${node.id}`]: true }));
+    setShowChat(true);
+    setShowContextPicker(true);
     setSelectedNode(null);
   }
 
@@ -176,7 +258,7 @@ export default function SessionPage() {
       await loadData();
     } catch (err) {
       console.error(err);
-      setErrorMsg(`メモの更新に失敗しました: ${err?.message || err}`);
+      alert(`メモの更新に失敗しました: ${err?.message || err}`);
     }
   }
 
@@ -268,6 +350,9 @@ export default function SessionPage() {
   const nodeMap = {};
   nodes.forEach((n) => (nodeMap[n.id] = n));
 
+  // 整理・批評は参照する記録がある方が精度が上がるため、未選択なら注意を出す
+  const needsContext = (mode === 'organize' || mode === 'critique') && selectedCount === 0;
+
   return (
     <div className="workspace">
       {loadError && (
@@ -319,14 +404,6 @@ export default function SessionPage() {
 
         {showChat && (
         <div className="chat-column">
-          {pendingLinkSource && (
-            <div className="link-source-banner">
-              <span>この送信は選択したノードにつながります</span>
-              <button className="btn-secondary" onClick={() => setPendingLinkSource(null)}>
-                解除
-              </button>
-            </div>
-          )}
           <div className="chat-history">
             {nodes
               .filter((n) => n.type === 'AI')
@@ -337,21 +414,112 @@ export default function SessionPage() {
                   onClick={() => openNodeDetail(n)}
                   style={{ cursor: 'pointer' }}
                 >
-                  <div className="chat-prompt">{n.ai_turns?.prompt}</div>
+                  <div className="chat-prompt">
+                    {n.ai_turns?.mode && (
+                      <span className="mode-tag">{getMode(n.ai_turns.mode).label}</span>
+                    )}
+                    {n.ai_turns?.prompt}
+                  </div>
                   <div className="chat-response">{n.ai_turns?.response}</div>
                 </div>
               ))}
             {nodes.filter((n) => n.type === 'AI').length === 0 && (
               <p style={{ color: 'var(--text-muted)' }}>
-                下の入力欄からAIに質問してみましょう。
+                モードを選んで、下の入力欄からAIに質問してみましょう。
               </p>
             )}
           </div>
+
+          {/* モード選択と参照する記録 */}
+          <div className="chat-toolbar">
+            <div className="mode-picker" ref={modePickerRef}>
+              <button
+                type="button"
+                className="mode-picker-btn"
+                onClick={() => setModeMenuOpen((v) => !v)}
+                aria-haspopup="listbox"
+                aria-expanded={modeMenuOpen}
+              >
+                <span className="mode-picker-label">{currentMode.label}</span>
+                <span className="mode-caret" aria-hidden="true">▾</span>
+              </button>
+              {modeMenuOpen && (
+                <ul className="mode-menu" role="listbox">
+                  {AI_MODES.map((m) => (
+                    <li key={m.id}>
+                      <button
+                        type="button"
+                        role="option"
+                        aria-selected={m.id === mode}
+                        className={`mode-menu-item${m.id === mode ? ' is-active' : ''}`}
+                        onClick={() => {
+                          setMode(m.id);
+                          setModeMenuOpen(false);
+                        }}
+                      >
+                        <span className="mode-menu-label">{m.label}</span>
+                        <span className="mode-menu-hint">{m.hint}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+
+            <button
+              type="button"
+              className={`context-btn${selectedCount > 0 ? ' is-on' : ''}`}
+              onClick={() => setShowContextPicker((v) => !v)}
+              aria-expanded={showContextPicker}
+            >
+              参照する記録{selectedCount > 0 ? `（${selectedCount}）` : 'を選ぶ'}
+              <span className="mode-caret" aria-hidden="true">▾</span>
+            </button>
+          </div>
+
+          {needsContext && (
+            <p className="chat-note">
+              「{currentMode.label}」は、参照する記録を選ぶと精度が上がります。
+            </p>
+          )}
+
+          {showContextPicker && (
+            <div className="context-picker">
+              {contextCandidates.length === 0 && (
+                <p style={{ color: 'var(--text-muted)', fontSize: 'var(--font-sm)', margin: 0 }}>
+                  まだ選択できる記録がありません
+                </p>
+              )}
+              {contextCandidates.map((c) => {
+                const key = contextKeyOf(c);
+                return (
+                  <label className="context-item" key={key}>
+                    <input
+                      type="checkbox"
+                      checked={!!contextSelected[key]}
+                      onChange={() => toggleContext(key)}
+                    />
+                    <span>{contextLabel(c)}</span>
+                  </label>
+                );
+              })}
+              {selectedCount > 0 && (
+                <button
+                  type="button"
+                  className="context-clear"
+                  onClick={() => setContextSelected({})}
+                >
+                  選択を解除
+                </button>
+              )}
+            </div>
+          )}
+
           <div className="chat-input-row">
             <textarea
               value={promptInput}
               onChange={(e) => setPromptInput(e.target.value)}
-              placeholder="AIに質問..."
+              placeholder={currentMode.placeholder}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault();

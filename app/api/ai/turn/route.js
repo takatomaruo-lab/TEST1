@@ -1,14 +1,44 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '../../../../lib/supabaseClient';
+import { buildSystemInstruction, getMode, DEFAULT_MODE_ID } from '../../../../lib/aiModes';
 
 const GEMINI_MODEL = 'gemini-3.5-flash';
-const SYSTEM_INSTRUCTION =
-  'あなたはデザイン検討を手伝うアシスタントです。回答は、今の状況で必要な提案だけを最大5個までの番号付きリスト（1. 2. 3. ...）で簡潔に示してください。各項目は1〜2文までとし、前置き・挨拶・まとめの言葉は書かないでください。提案が1つしかない場合は1個だけで構いません。提案ではなく単純な質問への回答の場合は、番号付きリストにせず2〜4文で簡潔に答えてください。';
+
+// モードごとの生成パラメータ。
+// 提案は発想の幅を広げたいので温度を高め、整理・批評は入力に忠実にしたいので低め。
+const MODE_GENERATION = {
+  reference: { temperature: 0.4, thinkingLevel: 'medium' },
+  propose: { temperature: 0.9, thinkingLevel: 'medium' },
+  organize: { temperature: 0.2, thinkingLevel: 'low' },
+  critique: { temperature: 0.5, thinkingLevel: 'high' },
+};
+
+// 参加者が選んだ「参照する記録」を、AIに渡す文脈ブロックに整形する
+function buildContextBlock(contextItems) {
+  if (!Array.isArray(contextItems) || contextItems.length === 0) return '';
+  const lines = contextItems
+    .map((item, i) => {
+      const label = (item.label || '記録').trim();
+      const text = (item.text || '').trim();
+      if (!text) return `${i + 1}. ${label}：(本文なし・画像のみ)`;
+      return `${i + 1}. ${label}：${text}`;
+    })
+    .join('\n');
+  return `【参照する記録】\n${lines}\n\n`;
+}
 
 export async function POST(request) {
   try {
     const body = await request.json();
-    const { sessionId, prompt, history, linkSource } = body;
+    const {
+      sessionId,
+      prompt,
+      history,
+      mode: rawMode,
+      contextItems,
+      // 旧仕様との互換（単一ノードを指定して送るケース）
+      linkSource,
+    } = body;
 
     if (!sessionId || !prompt) {
       return NextResponse.json(
@@ -16,6 +46,9 @@ export async function POST(request) {
         { status: 400 }
       );
     }
+
+    const modeId = getMode(rawMode).id;
+    const genConfig = MODE_GENERATION[modeId] || MODE_GENERATION[DEFAULT_MODE_ID];
 
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
@@ -25,14 +58,23 @@ export async function POST(request) {
       );
     }
 
+    // 整理・批評は「参加者が選んだ記録」を主材料にするため、
+    // 過去のチャット履歴は渡さず、文脈の混入を防ぐ。
+    const useHistory = modeId === 'reference' || modeId === 'propose';
+
+    const contextBlock = buildContextBlock(contextItems);
+    const userText = contextBlock
+      ? `${contextBlock}【今回の入力】\n${prompt}`
+      : prompt;
+
     const contents = [
-      ...(Array.isArray(history)
+      ...(useHistory && Array.isArray(history)
         ? history.map((h) => ({
             role: h.role === 'assistant' ? 'model' : 'user',
             parts: [{ text: h.text }],
           }))
         : []),
-      { role: 'user', parts: [{ text: prompt }] },
+      { role: 'user', parts: [{ text: userText }] },
     ];
 
     const geminiRes = await fetch(
@@ -46,12 +88,13 @@ export async function POST(request) {
         body: JSON.stringify({
           contents,
           systemInstruction: {
-            parts: [{ text: SYSTEM_INSTRUCTION }],
+            parts: [{ text: buildSystemInstruction(modeId) }],
           },
           generationConfig: {
             maxOutputTokens: 2048,
+            temperature: genConfig.temperature,
             thinkingConfig: {
-              thinkingLevel: 'medium',
+              thinkingLevel: genConfig.thinkingLevel,
             },
           },
         }),
@@ -86,34 +129,70 @@ export async function POST(request) {
       .single();
     if (nodeErr) throw nodeErr;
 
+    // prompt には参加者が実際に打った文だけを保存する。
+    // どの記録を参照したかは links 側に残るため、本文を二重に持たない。
     const { error: turnErr } = await supabase.from('ai_turns').insert({
       node_id: node.id,
       prompt,
       response: responseText,
       sequence,
       model_name: GEMINI_MODEL,
+      mode: modeId,
     });
     if (turnErr) throw turnErr;
 
+    // 参照した記録から、今回のAIメモへ有向リンクを張る
+    const sources = [];
+    if (Array.isArray(contextItems)) {
+      contextItems.forEach((item) => {
+        if (item?.node_id || item?.fragment_id) {
+          sources.push({
+            node_id: item.node_id || null,
+            fragment_id: item.fragment_id || null,
+          });
+        }
+      });
+    }
     if (linkSource && (linkSource.node_id || linkSource.fragment_id)) {
-      const { data: linkRow, error: linkErr } = await supabase
-        .from('links')
-        .insert({
-          source_node_id: linkSource.node_id || null,
-          source_fragment_id: linkSource.fragment_id || null,
-          target_node_id: node.id,
-          link_source: 'consult_ai',
-        })
-        .select()
-        .single();
-      if (!linkErr && linkRow) {
-        await supabase
-          .from('link_logs')
-          .insert({ link_id: linkRow.id, action: 'CREATED' });
+      const dup = sources.some(
+        (s) =>
+          s.node_id === (linkSource.node_id || null) &&
+          s.fragment_id === (linkSource.fragment_id || null)
+      );
+      if (!dup) {
+        sources.push({
+          node_id: linkSource.node_id || null,
+          fragment_id: linkSource.fragment_id || null,
+        });
       }
     }
 
-    return NextResponse.json({ nodeId: node.id, response: responseText });
+    if (sources.length > 0) {
+      const { data: linkRows, error: linkErr } = await supabase
+        .from('links')
+        .insert(
+          sources.map((s) => ({
+            source_node_id: s.node_id,
+            source_fragment_id: s.fragment_id,
+            target_node_id: node.id,
+            link_source: 'consult_ai',
+          }))
+        )
+        .select();
+      if (linkErr) {
+        console.error('links insert error:', linkErr);
+      } else if (linkRows && linkRows.length > 0) {
+        await supabase
+          .from('link_logs')
+          .insert(linkRows.map((l) => ({ link_id: l.id, action: 'CREATED' })));
+      }
+    }
+
+    return NextResponse.json({
+      nodeId: node.id,
+      response: responseText,
+      mode: modeId,
+    });
   } catch (err) {
     console.error(err);
     return NextResponse.json(

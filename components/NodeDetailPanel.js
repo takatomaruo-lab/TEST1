@@ -1,5 +1,7 @@
 "use client";
 
+import { getMode } from '../lib/aiModes';
+
 function sourceLabel(link, nodeMap, fragments) {
   if (link.source_fragment_id) {
     const frag = fragments.find((f) => f.id === link.source_fragment_id);
@@ -48,6 +50,9 @@ export default function NodeDetailPanel({
 
       {node.type === 'AI' && (
         <div>
+          {node.ai_turns?.mode && (
+            <span className="mode-tag">{getMode(node.ai_turns.mode).label}モード</span>
+          )}
           <h3>プロンプト</h3>
           <p>{node.ai_turns?.prompt}</p>
           <h3>AI回答</h3>

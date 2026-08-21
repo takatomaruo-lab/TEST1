@@ -41,7 +41,7 @@ export default function SessionPage() {
   const loadData = useCallback(async () => {
     const { data: nodesData, error: nodesErr } = await supabase
       .from('nodes')
-      .select('*, ai_turns(*), designs!designs_node_id_fkey(*), memos(*)')
+      .select('*, ai_turns(*), designs!designs_node_id_fkey(*), memos!memos_node_id_fkey(*)')
       .eq('session_id', sessionId)
       .order('created_at', { ascending: true });
     if (nodesErr) {

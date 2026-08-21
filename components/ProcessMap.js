@@ -155,7 +155,7 @@ export default function ProcessMap({
           id: n.id,
           type: 'card',
           position,
-          draggable: n.type === 'DESIGN',
+          draggable: n.type === 'DESIGN' || n.type === 'AI',
           data: { label: labelFor(n), color: COLOR[n.type] },
         };
       }),

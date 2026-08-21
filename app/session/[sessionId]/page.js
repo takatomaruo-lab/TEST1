@@ -292,6 +292,16 @@ export default function SessionPage() {
 
   // ハンドル同士をドラッグしてつないだ時の保存処理
   async function createManualLink(sourceNodeId, targetNodeId) {
+    // 同じ2ノード間に既存リンクがあれば（向き問わず）重複作成しない
+    const isDuplicate = links.some(
+      (l) =>
+        (l.source_node_id === sourceNodeId && l.target_node_id === targetNodeId) ||
+        (l.source_node_id === targetNodeId && l.target_node_id === sourceNodeId)
+    );
+    if (isDuplicate) {
+      console.log('duplicate link skipped:', sourceNodeId, targetNodeId);
+      return;
+    }
     try {
       const { data: linkRow, error } = await supabase
         .from('links')

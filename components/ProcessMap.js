@@ -18,7 +18,7 @@ import '@xyflow/react/dist/style.css';
 const COLUMN_WIDTH = 260; // 1段（depth）あたりの横間隔
 const COLUMN_MARGIN = 40; // 左端の余白
 const TOP_MARGIN = 40;    // 上端の余白
-const ROW_GAP = 44;       // 同じ段に複数ノードが並ぶときの縦間隔
+const ROW_GAP = 88;       // 同じ段に複数ノードが並ぶときの縦間隔
 // 不採用にした記録は採用中の記録と混ざらないよう、下側に離して置く
 const REJECTED_ZONE_GAP = 160;
 // ピル1個分の高さの目安。ゾーンの区切り線を引く位置の計算に使う
@@ -173,6 +173,8 @@ function PillNode({ data }) {
         className="pill-info"
         title="詳細を見る"
         aria-label="詳細を見る"
+        // 「i」の文字はそのメモの色にする（不採用のときは灰色）
+        style={{ color: data.color }}
         onClick={(e) => {
           e.stopPropagation();
           data.onOpenDetail();
@@ -523,6 +525,9 @@ export default function ProcessMap({
           return null;
         }
         const { sourceHandle, targetHandle } = pickHandles(sourceId, l.target_node_id);
+        // 端のどちらかが不採用なら点線にして、採用中のつながりと見分けられるようにする
+        const touchesRejected =
+          isRejected(nodeMap[sourceId]) || isRejected(nodeMap[l.target_node_id]);
         return {
           id: `link-${l.id}`,
           source: sourceId,
@@ -533,6 +538,7 @@ export default function ProcessMap({
           data: {
             fromColor: colorOf(sourceId),
             toColor: colorOf(l.target_node_id),
+            dashed: touchesRejected,
           },
         };
       })

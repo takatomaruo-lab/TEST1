@@ -452,6 +452,26 @@ label {
   opacity: 0.85;
 }
 
+/* 採用中の記録と不採用にしたAIメモを分ける区切り線。
+   ノードとして置いているのでキャンバスと一緒に拡大・移動する */
+.zone-divider {
+  position: relative;
+  height: 0;
+  border-top: 2px dotted var(--pal-muted);
+  pointer-events: none;
+}
+.zone-divider-label {
+  position: absolute;
+  top: -9px;
+  left: 0;
+  padding: 0 var(--space-sm);
+  font-size: var(--font-xs);
+  font-weight: 600;
+  color: var(--text-muted);
+  background: var(--bg);
+  white-space: nowrap;
+}
+
 /* つながりの線を引くためのハンドル。普段は控えめで、ノードに触れると出てくる */
 .react-flow__handle.pill-handle {
   width: 10px;

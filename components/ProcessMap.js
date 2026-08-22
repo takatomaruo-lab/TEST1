@@ -21,6 +21,8 @@ const TOP_MARGIN = 40;    // 上端の余白
 const ROW_GAP = 44;       // 同じ段に複数ノードが並ぶときの縦間隔
 // 不採用にした記録は採用中の記録と混ざらないよう、下側に離して置く
 const REJECTED_ZONE_GAP = 160;
+// ピル1個分の高さの目安。ゾーンの区切り線を引く位置の計算に使う
+const PILL_APPROX_HEIGHT = 32;
 
 // パレット（AIメモ=サフラン／思考メモ=ムーンストーン／文字=ガンメタル）。
 // 線のグラデーション計算に実際の色値が必要なため、ここではCSS変数ではなく実値を持つ。
@@ -242,7 +244,17 @@ function GradientEdge({
   );
 }
 
-const NODE_TYPES = { pill: PillNode };
+// 採用中のゾーンと不採用ゾーンの境目に引く区切り。
+// ノードとして置くのでキャンバスと一緒に動くが、選択・移動・削除はできない
+function ZoneDividerNode({ data }) {
+  return (
+    <div className="zone-divider" style={{ width: data.width }}>
+      <span className="zone-divider-label">不採用にしたAIメモ</span>
+    </div>
+  );
+}
+
+const NODE_TYPES = { pill: PillNode, zoneDivider: ZoneDividerNode };
 const EDGE_TYPES = { gradient: GradientEdge };
 
 export default function ProcessMap({
@@ -428,6 +440,51 @@ export default function ProcessMap({
     [nodes, autoLayout, visibleNodeIds]
   );
 
+  // 不採用ゾーンの区切り線。表示中に不採用の記録が1件もなければ引かない。
+  // 手動で動かしたノードも含めた実際の位置から境目を求めるので、
+  // 自動整列していない状態でも線が実態からずれない
+  const zoneDivider = useMemo(() => {
+    const visible = nodes.filter((n) => visibleNodeIds.has(n.id));
+    const rejected = visible.filter(isRejected);
+    if (rejected.length === 0) return null;
+    const active = visible.filter((n) => !isRejected(n));
+
+    const posOf = (n) =>
+      n.position_x != null && n.position_y != null
+        ? { x: n.position_x, y: n.position_y }
+        : autoLayout[n.id] || { x: COLUMN_MARGIN, y: TOP_MARGIN };
+
+    const rejectedTop = Math.min(...rejected.map((n) => posOf(n).y));
+    const y = active.length
+      ? // 採用側の一番下と不採用側の一番上のちょうど中間に引く
+        (Math.max(...active.map((n) => posOf(n).y)) + PILL_APPROX_HEIGHT + rejectedTop) / 2
+      : rejectedTop - REJECTED_ZONE_GAP / 2;
+
+    const xs = visible.map((n) => posOf(n).x);
+    const left = Math.min(...xs) - 24;
+    const right = Math.max(...xs) + COLUMN_WIDTH;
+    return { x: left, y, width: Math.max(right - left, 360) };
+  }, [nodes, visibleNodeIds, autoLayout]);
+
+  // 区切り線はピルより後ろに描く。React Flowの選択・削除の対象からも外す
+  const nodesForFlow = useMemo(() => {
+    if (!zoneDivider) return flowNodes;
+    return [
+      {
+        id: '__zone-divider__',
+        type: 'zoneDivider',
+        position: { x: zoneDivider.x, y: zoneDivider.y },
+        data: { width: zoneDivider.width },
+        draggable: false,
+        selectable: false,
+        deletable: false,
+        focusable: false,
+        zIndex: -1,
+      },
+      ...flowNodes,
+    ];
+  }, [flowNodes, zoneDivider]);
+
   // ノードの左右の位置関係から、一番近いハンドル同士を自動で選ぶ
   const posMap = useMemo(() => {
     const m = {};
@@ -536,7 +593,7 @@ export default function ProcessMap({
 
   return (
     <ReactFlow
-      nodes={flowNodes}
+      nodes={nodesForFlow}
       edges={edgesForFlow}
       nodeTypes={NODE_TYPES}
       edgeTypes={EDGE_TYPES}

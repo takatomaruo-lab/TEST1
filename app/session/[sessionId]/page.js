@@ -376,16 +376,32 @@ export default function SessionPage() {
   }
 
   // ノードをダブルクリックして本文を書き換えたときの保存処理。
-  // AIチャット由来の記録（type='AI'）は実際のやり取りそのものなので対象外
+  // AIチャット由来の記録（type='AI'）は実際のやり取りそのものなので対象外。
+  //
+  // memos.text は上書きするが、編集前の本文を memo_edits に1行ずつ残す。
+  // 「このメモを更新」（revision_parent_id で新しいノードを作る）とは別扱いで、
+  // マップ上のノードは増えず、研究データとしての編集ログだけが蓄積される。
   async function updateMemoText(nodeId, newText) {
     const node = nodes.find((n) => n.id === nodeId);
     if (!node || node.type !== 'MEMO') return;
+    const oldText = node.memos?.text || '';
+    if (newText === oldText) return;
     try {
       const { error } = await supabase
         .from('memos')
         .update({ text: newText })
         .eq('node_id', nodeId);
       if (error) throw error;
+
+      // 編集ログの保存に失敗しても編集そのものは成立させる（参加者の作業を止めない）
+      const { error: logErr } = await supabase.from('memo_edits').insert({
+        node_id: nodeId,
+        session_id: sessionId,
+        old_text: oldText,
+        new_text: newText,
+      });
+      if (logErr) console.error('memo_edits insert error:', logErr);
+
       await loadData();
     } catch (err) {
       console.error(err);

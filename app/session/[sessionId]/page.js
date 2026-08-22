@@ -176,26 +176,9 @@ export default function SessionPage() {
     return () => document.removeEventListener('mousedown', onDocClick);
   }, [modeMenuOpen]);
 
-  // ノードを選ぶと詳細パネルが開くため、Deleteキーはパネル表示中に受け取る。
-  // 入力欄で文字を消しているときは反応させない
-  useEffect(() => {
-    if (!selectedNode) return;
-    function onKeyDown(e) {
-      if (e.key !== 'Delete' && e.key !== 'Backspace') return;
-      const t = e.target;
-      const tag = t?.tagName ? t.tagName.toLowerCase() : '';
-      if (tag === 'input' || tag === 'textarea' || t?.isContentEditable) return;
-      e.preventDefault();
-      if (isAiNode(selectedNode)) {
-        toggleRejectNode(selectedNode);
-      } else {
-        deleteNode(selectedNode);
-      }
-    }
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedNode]);
+  // Deleteキーの処理はReact Flow側（ProcessMapのonNodesDelete）に一本化している。
+  // 詳細パネルはノードのインフォメーションマークからのみ開くため、
+  // ここで重ねてキーを拾うと二重に発火してしまう。
 
   // 参照候補（既存ノード＋AI回答の一部）
   const contextCandidates = [

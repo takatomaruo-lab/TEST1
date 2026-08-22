@@ -160,11 +160,25 @@ function PillNode({ data }) {
     <div
       className={`pill-node${data.rejected ? ' is-rejected' : ''}`}
       style={{ background: data.color }}
-      title={data.rejected ? `(不採用) ${data.fullText}` : data.fullText}
+      title={data.editable ? 'ダブルクリックで編集' : undefined}
       onDoubleClick={startEditing}
     >
       <SideHandles />
-      {data.body}
+      <span className="pill-body">{data.body}</span>
+      {/* 詳細パネルはこのマークからのみ開く（ノード本体のクリックでは開かない） */}
+      <button
+        type="button"
+        className="pill-info"
+        title="詳細を見る"
+        aria-label="詳細を見る"
+        onClick={(e) => {
+          e.stopPropagation();
+          data.onOpenDetail();
+        }}
+        onDoubleClick={(e) => e.stopPropagation()}
+      >
+        i
+      </button>
     </div>
   );
 }
@@ -405,6 +419,9 @@ export default function ProcessMap({
               onCommitText: (newText) => {
                 if (onEditNodeText) onEditNodeText(n.id, newText);
               },
+              onOpenDetail: () => {
+                if (onNodeClick) onNodeClick(n);
+              },
             },
           };
         }),
@@ -507,7 +524,7 @@ export default function ProcessMap({
       const len = target.data.body?.length || 0;
       const perLine = 12; // 1行あたりの文字数の目安
       const lines = Math.min(3, Math.max(1, Math.ceil(len / perLine)));
-      const width = Math.min(len, perLine) * 12 + 28;
+      const width = Math.min(len, perLine) * 12 + 28 + 22; // 22 はインフォメーションマークの分
       const height = 12 + lines * 18;
       rfInstanceRef.current.setCenter(
         target.position.x + width / 2,
@@ -533,10 +550,6 @@ export default function ProcessMap({
       connectionLineStyle={{ stroke: PALETTE.gunmetal, strokeWidth: 2.5 }}
       onInit={(instance) => {
         rfInstanceRef.current = instance;
-      }}
-      onNodeClick={(_, flowNode) => {
-        const n = nodeMap[flowNode.id];
-        if (n) onNodeClick(n);
       }}
       onNodeDragStop={(_, flowNode) => {
         if (onNodeDragEnd) {

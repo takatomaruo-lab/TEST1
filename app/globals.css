@@ -389,7 +389,7 @@ label {
   font-weight: 700;
 }
 /* ボタンの色はマップ上のノードの色と対応させる */
-.map-add-memo { background: var(--memo-pill); color: var(--pal-gunmetal); }
+.map-add-memo { background: var(--memo-pill); color: var(--pill-text); }
 .map-add-memo:hover { background: var(--accent-hover); }
 .map-add-ai { background: var(--ai-pill); color: var(--pal-gunmetal); }
 .map-add-ai:hover { background: #f0b43a; }
@@ -398,23 +398,50 @@ label {
 .pill-node {
   color: var(--pill-text);
   border-radius: 14px;
-  padding: 6px 14px;
+  padding: 6px 8px 6px 14px;
   font-size: var(--font-sm);
   font-weight: 600;
   line-height: 1.4;
-  /* 長い本文は折り返して最大3行まで表示し、溢れた分は「…」で省略する */
+  width: max-content;
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  text-align: left;
+  box-shadow: 0 1px 3px rgba(32, 55, 59, 0.22);
+}
+
+/* 本文は折り返して最大3行まで表示し、溢れた分は「…」で省略する */
+.pill-body {
   white-space: normal;
   overflow-wrap: anywhere;
-  width: max-content;
   max-width: 13em;
   display: -webkit-box;
   -webkit-line-clamp: 3;
   line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
-  text-align: left;
-  box-shadow: 0 1px 3px rgba(32, 55, 59, 0.22);
 }
+
+/* 詳細パネルを開くインフォメーションマーク */
+.pill-info {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255, 255, 255, 0.85);
+  color: var(--pal-gunmetal);
+  font-size: var(--font-xs);
+  font-weight: 700;
+  font-style: italic;
+  font-family: Georgia, "Times New Roman", serif;
+  line-height: 1;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.pill-info:hover { background: #ffffff; }
 
 /* 1行に収まる短い本文は角丸を強めてピル型に見せる */
 .pill-node:not(.pill-node-editing) { border-radius: 14px; }
@@ -504,7 +531,6 @@ label {
 .pill-node-editing {
   padding: 3px 8px;
   display: block;
-  max-width: none;
   border-radius: var(--radius-pill);
 }
 .pill-edit-input {

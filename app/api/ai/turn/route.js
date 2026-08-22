@@ -4,13 +4,16 @@ import { buildSystemInstruction, getMode, DEFAULT_MODE_ID } from '../../../../li
 
 const GEMINI_MODEL = 'gemini-3.5-flash';
 
-// モードごとの生成パラメータ。
-// 提案は発想の幅を広げたいので温度を高め、整理・批評は入力に忠実にしたいので低め。
-const MODE_GENERATION = {
-  reference: { temperature: 0.4, thinkingLevel: 'medium' },
-  propose: { temperature: 0.9, thinkingLevel: 'medium' },
-  organize: { temperature: 0.2, thinkingLevel: 'low' },
-  critique: { temperature: 0.5, thinkingLevel: 'high' },
+// モードごとの思考の深さ。
+// temperature / topP / topK は Gemini 3.x では公式に非推奨（デフォルト設定に
+// 最適化されているため外から指定すると噛み合わない）。渡していない。
+// 出力の幅や忠実さは lib/aiModes.js の system 側のルールで作る。
+const MODE_THINKING = {
+  reference: 'medium',
+  propose: 'medium',
+  organize: 'medium',
+  // 批評だけは見落としやトレードオフを洗い出すため深く考えさせる
+  critique: 'high',
 };
 
 // 参加者が選んだ「参照する記録」を、AIに渡す文脈ブロックに整形する
@@ -48,7 +51,7 @@ export async function POST(request) {
     }
 
     const modeId = getMode(rawMode).id;
-    const genConfig = MODE_GENERATION[modeId] || MODE_GENERATION[DEFAULT_MODE_ID];
+    const thinkingLevel = MODE_THINKING[modeId] || MODE_THINKING[DEFAULT_MODE_ID];
 
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
@@ -92,9 +95,8 @@ export async function POST(request) {
           },
           generationConfig: {
             maxOutputTokens: 2048,
-            temperature: genConfig.temperature,
             thinkingConfig: {
-              thinkingLevel: genConfig.thinkingLevel,
+              thinkingLevel,
             },
           },
         }),

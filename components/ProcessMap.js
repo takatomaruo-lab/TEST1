@@ -19,6 +19,8 @@ const COLUMN_WIDTH = 260; // 1段（depth）あたりの横間隔
 const COLUMN_MARGIN = 40; // 左端の余白
 const TOP_MARGIN = 40;    // 上端の余白
 const ROW_GAP = 44;       // 同じ段に複数ノードが並ぶときの縦間隔
+// 不採用にした記録は採用中の記録と混ざらないよう、下側に離して置く
+const REJECTED_ZONE_GAP = 160;
 
 // パレット（AIメモ=サフラン／思考メモ=ムーンストーン／文字=ガンメタル）。
 // 線のグラデーション計算に実際の色値が必要なため、ここではCSS変数ではなく実値を持つ。
@@ -27,6 +29,8 @@ const PALETTE = {
   saffron: '#FFC64F',
   moonstone: '#519CAB',
   gunmetal: '#20373B',
+  // 不採用にした記録の色。globals.css の --pal-muted と必ず同じ値にすること
+  muted: '#9AA5A8',
 };
 
 // 種別は「AIメモ」「思考メモ」の2種類。
@@ -39,11 +43,18 @@ function isAiNode(node) {
   return false;
 }
 
+// 不採用にした記録（rejected_at あり）は種別によらず灰色にする
+function isRejected(node) {
+  return !!node.rejected_at;
+}
+
 function colorForNode(node) {
+  if (isRejected(node)) return PALETTE.muted;
   return isAiNode(node) ? PALETTE.saffron : PALETTE.moonstone;
 }
 
-// ノードに表示する文字数の上限。全文はクリックで詳細パネルに表示する
+// ノードに表示する文字数の上限。最大3行（CSS側の -webkit-line-clamp）に収まる量。
+// 全文はクリックで詳細パネルに表示する
 const LABEL_MAX_CHARS = 30;
 
 function SideHandles() {
@@ -147,9 +158,9 @@ function PillNode({ data }) {
 
   return (
     <div
-      className="pill-node"
+      className={`pill-node${data.rejected ? ' is-rejected' : ''}`}
       style={{ background: data.color }}
-      title={data.editable ? 'ダブルクリックで編集' : data.fullText}
+      title={data.rejected ? `(不採用) ${data.fullText}` : data.fullText}
       onDoubleClick={startEditing}
     >
       <SideHandles />
@@ -232,6 +243,8 @@ export default function ProcessMap({
   showAddMemo,
   onAddMemo,
   onEditNodeText,
+  onToggleReject,
+  onDeleteNode,
 }) {
   const nodeMap = useMemo(() => {
     const m = {};
@@ -312,37 +325,57 @@ export default function ProcessMap({
     });
     const maxDepth = Object.keys(columns).reduce((a, b) => Math.max(a, Number(b)), 0);
 
-    // 左の段から順に、もとにした記録の高さの平均に寄せて配置する
+    // 左の段から順に、もとにした記録の高さの平均に寄せて配置する。
+    // 採用中の記録を上のゾーン、不採用にした記録を下のゾーンに分けて置き、
+    // 自動整列したときに両者が混ざらないようにする。
     const yById = {};
     const positions = {};
-    for (let d = 0; d <= maxDepth; d++) {
-      const col = columns[d] || [];
-      const entries = col.map((n) => {
-        const parentYs = (incoming[n.id] || [])
-          .map((pid) => yById[pid])
-          .filter((y) => y !== undefined);
-        const desired = parentYs.length
-          ? parentYs.reduce((s, y) => s + y, 0) / parentYs.length
-          : null;
-        return { node: n, desired };
-      });
-      // もとにした記録がないノード（＝起点）は作成順に、それ以外は寄せたい高さ順に並べる
-      entries.sort((a, b) => {
-        if (a.desired == null && b.desired == null) {
-          return new Date(a.node.created_at) - new Date(b.node.created_at);
-        }
-        if (a.desired == null) return 1;
-        if (b.desired == null) return -1;
-        return a.desired - b.desired;
-      });
 
-      let cursor = TOP_MARGIN;
-      entries.forEach(({ node, desired }) => {
-        const y = Math.max(cursor, desired ?? TOP_MARGIN);
-        yById[node.id] = y;
-        positions[node.id] = { x: COLUMN_MARGIN + d * COLUMN_WIDTH, y };
-        cursor = y + ROW_GAP;
-      });
+    function placeZone(members, topMargin) {
+      const inZone = new Set(members.map((n) => n.id));
+      let zoneBottom = topMargin;
+      for (let d = 0; d <= maxDepth; d++) {
+        const col = (columns[d] || []).filter((n) => inZone.has(n.id));
+        if (col.length === 0) continue;
+        const entries = col.map((n) => {
+          // 同じゾーン内のもとにした記録だけを高さ合わせの対象にする
+          const parentYs = (incoming[n.id] || [])
+            .filter((pid) => inZone.has(pid))
+            .map((pid) => yById[pid])
+            .filter((y) => y !== undefined);
+          const desired = parentYs.length
+            ? parentYs.reduce((s, y) => s + y, 0) / parentYs.length
+            : null;
+          return { node: n, desired };
+        });
+        // もとにした記録がないノード（＝起点）は作成順に、それ以外は寄せたい高さ順に並べる
+        entries.sort((a, b) => {
+          if (a.desired == null && b.desired == null) {
+            return new Date(a.node.created_at) - new Date(b.node.created_at);
+          }
+          if (a.desired == null) return 1;
+          if (b.desired == null) return -1;
+          return a.desired - b.desired;
+        });
+
+        let cursor = topMargin;
+        entries.forEach(({ node, desired }) => {
+          const y = Math.max(cursor, desired ?? topMargin);
+          yById[node.id] = y;
+          positions[node.id] = { x: COLUMN_MARGIN + d * COLUMN_WIDTH, y };
+          cursor = y + ROW_GAP;
+          if (cursor > zoneBottom) zoneBottom = cursor;
+        });
+      }
+      return zoneBottom;
+    }
+
+    const activeNodes = nodes.filter((n) => !isRejected(n));
+    const rejectedNodes = nodes.filter((n) => isRejected(n));
+
+    const activeBottom = placeZone(activeNodes, TOP_MARGIN);
+    if (rejectedNodes.length > 0) {
+      placeZone(rejectedNodes, activeBottom + REJECTED_ZONE_GAP);
     }
     return positions;
   }, [nodes, links, fragments]);
@@ -367,6 +400,7 @@ export default function ProcessMap({
               color: colorForNode(n),
               // AIチャット由来の記録は実際のやり取りそのものなので編集させない
               editable: n.type === 'MEMO',
+              rejected: isRejected(n),
               rawText: n.type === 'MEMO' ? n.memos?.text || '' : '',
               onCommitText: (newText) => {
                 if (onEditNodeText) onEditNodeText(n.id, newText);
@@ -469,9 +503,12 @@ export default function ProcessMap({
     if (!focusRequest || !rfInstanceRef.current) return;
     const target = flowNodes.find((n) => n.id === focusRequest.nodeId);
     if (target) {
-      // ピルの幅は文字数から概算する（1文字あたり約12px＋左右の余白）
-      const width = (target.data.body?.length || 0) * 12 + 28;
-      const height = 30;
+      // ピルは最大3行に折り返すので、幅・高さを行数から概算する
+      const len = target.data.body?.length || 0;
+      const perLine = 12; // 1行あたりの文字数の目安
+      const lines = Math.min(3, Math.max(1, Math.ceil(len / perLine)));
+      const width = Math.min(len, perLine) * 12 + 28;
+      const height = 12 + lines * 18;
       rfInstanceRef.current.setCenter(
         target.position.x + width / 2,
         target.position.y + height / 2,
@@ -510,6 +547,19 @@ export default function ProcessMap({
         if (!connection.source || !connection.target) return;
         if (connection.source === connection.target) return;
         if (onManualConnect) onManualConnect(connection.source, connection.target);
+      }}
+      onNodesDelete={(deleted) => {
+        // AIメモ＝削除せず「不採用」に切り替える（研究データとして残すため）
+        // 思考メモ＝参加者が自分で作った記録なので削除する
+        deleted.forEach((d) => {
+          const n = nodeMap[d.id];
+          if (!n) return;
+          if (isAiNode(n)) {
+            if (onToggleReject) onToggleReject(n);
+          } else if (onDeleteNode) {
+            onDeleteNode(n);
+          }
+        });
       }}
       onEdgeClick={(_, edge) => setSelectedEdgeId(edge.id)}
       onPaneClick={() => setSelectedEdgeId(null)}
@@ -556,13 +606,6 @@ export default function ProcessMap({
             <div className="map-filter-actions">
               <button
                 type="button"
-                className="btn map-add-ai"
-                onClick={() => onAddMemo(true)}
-              >
-                ＋AIメモ
-              </button>
-              <button
-                type="button"
                 className="btn map-add-memo"
                 onClick={() => onAddMemo(false)}
               >
@@ -574,7 +617,7 @@ export default function ProcessMap({
       </Panel>
       <Panel position="bottom-center">
         <p className="map-hint">
-          ノードの左右の丸をドラッグすると、つながりの線を引けます／線をクリックしてDeleteキーで削除
+          丸をドラッグで線を引く／Deleteで線を削除・AIメモを不採用・思考メモを削除
         </p>
       </Panel>
     </ReactFlow>

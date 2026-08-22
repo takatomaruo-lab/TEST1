@@ -30,133 +30,106 @@ export default function NodeDetailPanel({
   onConsultAI,
   onRevise,
   onDeleteLink,
-  onSaveFragment,
+  onToggleReject,
+  onDeleteNode,
 }) {
   if (!node) return null;
 
   // AIチャット由来の記録と、手動作成のAIメモの両方をAIメモとして扱う
   const isAi = node.type === 'AI' || !!node.memos?.is_ai;
+  const rejected = !!node.rejected_at;
 
   const incomingLinks = links.filter((l) => l.target_node_id === node.id);
 
   return (
-    <div className="detail-panel">
-      <button className="btn-secondary" onClick={onClose} style={{ float: 'right' }}>
-        閉じる
-      </button>
-      <span className={`badge badge-${isAi ? 'AI' : 'MEMO'}`}>
-        {isAi ? 'AIメモ' : '思考メモ'}
-      </span>
-
-      {node.type === 'AI' && (
-        <div>
-          {node.ai_turns?.mode && (
-            <span className="mode-tag">{getMode(node.ai_turns.mode).label}モード</span>
-          )}
-          <h3>プロンプト</h3>
-          <p>{node.ai_turns?.prompt}</p>
-          <h3>AI回答</h3>
-          <SelectableResponse
-            text={node.ai_turns?.response || ''}
-            onSave={(selectedText) => onSaveFragment(node.id, selectedText)}
-          />
-        </div>
-      )}
-
-      {/* DESIGNは過去セッションの記録。現在は思考メモに統合済み */}
-      {node.type === 'DESIGN' && (
-        <div>
-          <h3>思考メモ</h3>
-          {node.designs?.caption && (
-            <p style={{ whiteSpace: 'pre-wrap' }}>{node.designs.caption}</p>
-          )}
-          {node.designs?.image_path && (
-            /* eslint-disable-next-line @next/next/no-img-element */
-            <img src={node.designs.image_path} alt="添付画像" className="design-image" />
-          )}
-        </div>
-      )}
-
-      {node.type === 'MEMO' && (
-        <div>
-          <h3>{isAi ? 'AIメモ' : '思考メモ'}</h3>
-          {node.memos?.text && (
-            <p style={{ whiteSpace: 'pre-wrap' }}>{node.memos.text}</p>
-          )}
-          {node.memos?.image_path && (
-            /* eslint-disable-next-line @next/next/no-img-element */
-            <img src={node.memos.image_path} alt="添付画像" className="design-image" />
-          )}
-        </div>
-      )}
-
-      {condition === 'TOOL' && (
-        <div style={{ marginTop: 16, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <button className="btn-secondary" onClick={() => onConsultAI(node)}>
-            これについてAIに相談
-          </button>
-          {node.type !== 'AI' && (
-            <button className="btn-secondary" onClick={() => onRevise(node)}>
-              このメモを更新
-            </button>
-          )}
-        </div>
-      )}
-
-      <h3 style={{ marginTop: 20 }}>この記録につながった項目</h3>
-      {incomingLinks.length === 0 && (
-        <p style={{ color: 'var(--text-muted)', fontSize: 'var(--font-sm)' }}>なし</p>
-      )}
-      {incomingLinks.map((l) => (
-        <div className="link-list-item" key={l.id}>
-          <span>{sourceLabel(l, nodeMap, fragments)}</span>
-          {condition === 'TOOL' && (
-            <button className="btn-danger" onClick={() => onDeleteLink(l.id)}>
-              解除
-            </button>
-          )}
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function SelectableResponse({ text, onSave }) {
-  function handleMouseUp() {
-    const sel = window.getSelection();
-    const selectedText = sel ? sel.toString().trim() : '';
-    if (selectedText.length > 0) {
-      const box = document.getElementById('fragment-save-box');
-      if (box) box.dataset.text = selectedText;
-      const label = document.getElementById('fragment-save-label');
-      if (label) label.textContent = `選択中：「${selectedText.slice(0, 30)}」`;
-    }
-  }
-
-  return (
-    <div>
-      <p style={{ whiteSpace: 'pre-wrap' }} onMouseUp={handleMouseUp}>
-        {text}
-      </p>
-      <div id="fragment-save-box">
-        <span id="fragment-save-label" style={{ fontSize: 'var(--font-sm)', color: 'var(--text-muted)' }} />
-        <br />
-        <button
-          type="button"
-          className="select-fragment-btn"
-          onClick={() => {
-            const box = document.getElementById('fragment-save-box');
-            const t = box?.dataset.text;
-            if (t) {
-              onSave(t);
-              box.dataset.text = '';
-              const label = document.getElementById('fragment-save-label');
-              if (label) label.textContent = '';
-            }
-          }}
-        >
-          選択したテキストを参照として保存
+    // 詳細を開いている間は背景を暗くして作業対象に集中させる。
+    // オーバーレイ（＝パネルの外側）をクリックすると閉じる
+    <div className="detail-overlay" onClick={onClose}>
+      <div className="detail-panel" onClick={(e) => e.stopPropagation()}>
+        <button className="btn-secondary" onClick={onClose} style={{ float: 'right' }}>
+          閉じる
         </button>
+        <span className={`badge badge-${isAi ? 'AI' : 'MEMO'}`}>
+          {isAi ? 'AIメモ' : '思考メモ'}
+        </span>
+        {rejected && <span className="badge badge-rejected">不採用</span>}
+
+        {node.type === 'AI' && (
+          <div>
+            {node.ai_turns?.mode && (
+              <span className="mode-tag">{getMode(node.ai_turns.mode).label}モード</span>
+            )}
+            <h3>プロンプト</h3>
+            <p>{node.ai_turns?.prompt}</p>
+            <h3>AI回答</h3>
+            <p style={{ whiteSpace: 'pre-wrap' }}>{node.ai_turns?.response}</p>
+          </div>
+        )}
+
+        {/* DESIGNは過去セッションの記録。現在は思考メモに統合済み */}
+        {node.type === 'DESIGN' && (
+          <div>
+            <h3>思考メモ</h3>
+            {node.designs?.caption && (
+              <p style={{ whiteSpace: 'pre-wrap' }}>{node.designs.caption}</p>
+            )}
+            {node.designs?.image_path && (
+              /* eslint-disable-next-line @next/next/no-img-element */
+              <img src={node.designs.image_path} alt="添付画像" className="design-image" />
+            )}
+          </div>
+        )}
+
+        {node.type === 'MEMO' && (
+          <div>
+            <h3>{isAi ? 'AIメモ' : '思考メモ'}</h3>
+            {node.memos?.text && (
+              <p style={{ whiteSpace: 'pre-wrap' }}>{node.memos.text}</p>
+            )}
+            {node.memos?.image_path && (
+              /* eslint-disable-next-line @next/next/no-img-element */
+              <img src={node.memos.image_path} alt="添付画像" className="design-image" />
+            )}
+          </div>
+        )}
+
+        {condition === 'TOOL' && (
+          <div style={{ marginTop: 16, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button className="btn-secondary" onClick={() => onConsultAI(node)}>
+              これについてAIに相談
+            </button>
+            {node.type !== 'AI' && (
+              <button className="btn-secondary" onClick={() => onRevise(node)}>
+                このメモを更新
+              </button>
+            )}
+            {/* AIメモは不採用にして残し、思考メモは削除する */}
+            {isAi ? (
+              <button className="btn-secondary" onClick={() => onToggleReject(node)}>
+                {rejected ? '不採用を取り消す' : '不採用にする'}
+              </button>
+            ) : (
+              <button className="btn-danger" onClick={() => onDeleteNode(node)}>
+                このメモを削除
+              </button>
+            )}
+          </div>
+        )}
+
+        <h3 style={{ marginTop: 20 }}>この記録につながった項目</h3>
+        {incomingLinks.length === 0 && (
+          <p style={{ color: 'var(--text-muted)', fontSize: 'var(--font-sm)' }}>なし</p>
+        )}
+        {incomingLinks.map((l) => (
+          <div className="link-list-item" key={l.id}>
+            <span>{sourceLabel(l, nodeMap, fragments)}</span>
+            {condition === 'TOOL' && (
+              <button className="btn-danger" onClick={() => onDeleteLink(l.id)}>
+                解除
+              </button>
+            )}
+          </div>
+        ))}
       </div>
     </div>
   );

@@ -4,6 +4,7 @@
   --pal-moonstone: #519CAB; /* ムーンストーン */
   --pal-saffron: #FFC64F;   /* サフラン */
   --pal-gunmetal: #20373B;  /* ガンメタル */
+  --pal-muted: #9AA5A8;     /* 不採用の記録（灰色） */
 
   --bg: #eaf4f8;
   --surface: #ffffff;
@@ -396,14 +397,31 @@ label {
 /* プロセスマップのピル型ノード。AIメモ・思考メモとも同じ形・同じ文字色で塗りだけ変える */
 .pill-node {
   color: var(--pill-text);
-  border-radius: var(--radius-pill);
+  border-radius: 14px;
   padding: 6px 14px;
   font-size: var(--font-sm);
   font-weight: 600;
   line-height: 1.4;
-  white-space: nowrap;
+  /* 長い本文は折り返して最大3行まで表示し、溢れた分は「…」で省略する */
+  white-space: normal;
+  overflow-wrap: anywhere;
   width: max-content;
+  max-width: 13em;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-align: left;
   box-shadow: 0 1px 3px rgba(32, 55, 59, 0.22);
+}
+
+/* 1行に収まる短い本文は角丸を強めてピル型に見せる */
+.pill-node:not(.pill-node-editing) { border-radius: 14px; }
+
+/* 不採用にした記録。色はProcessMap.js側で灰色を割り当てる */
+.pill-node.is-rejected {
+  box-shadow: none;
+  opacity: 0.85;
 }
 
 /* つながりの線を引くためのハンドル。普段は控えめで、ノードに触れると出てくる */
@@ -428,6 +446,7 @@ label {
 /* マップ下部の操作ヒント */
 .map-hint {
   margin: 0;
+  white-space: nowrap;
   font-size: var(--font-xs);
   color: var(--text-muted);
   background: rgba(255, 255, 255, 0.85);
@@ -483,6 +502,9 @@ label {
 /* ノード本文のその場編集 */
 .pill-node-editing {
   padding: 3px 8px;
+  display: block;
+  max-width: none;
+  border-radius: var(--radius-pill);
 }
 .pill-edit-input {
   width: 220px;
@@ -647,4 +669,57 @@ label {
   margin: var(--space-sm) var(--space-md) 0;
   font-size: var(--font-xs);
   color: var(--text-muted);
+}
+
+
+/* ─────────────────────────────────────────────
+   詳細パネルのオーバーレイ／不採用／チャットの選択保存
+   ───────────────────────────────────────────── */
+
+/* 詳細を開いている間は背景を暗くして対象に集中させる。外側クリックで閉じる */
+.detail-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  z-index: 39;
+}
+
+.badge-rejected {
+  background: var(--pal-muted);
+  color: #fff;
+  margin-left: var(--space-xs);
+}
+
+/* AI回答を範囲選択したときに出るボタン */
+.chat-selection-popup {
+  position: fixed;
+  transform: translate(-50%, -100%);
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  padding: 3px 4px 3px 6px;
+  box-shadow: 0 4px 12px rgba(32, 55, 59, 0.25);
+  z-index: 55;
+}
+.chat-selection-popup .btn {
+  border-radius: var(--radius-pill);
+  padding: 4px var(--space-md);
+  font-size: var(--font-sm);
+}
+.chat-selection-close {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: var(--font-base);
+  line-height: 1;
+  padding: 2px 6px;
+}
+
+/* 選択しやすいようにAI回答はテキスト選択を明示的に許可する */
+.chat-response {
+  user-select: text;
+  cursor: text;
 }

@@ -41,6 +41,15 @@ function contextFullText(item) {
   return '';
 }
 
+// AIメモ（AIチャット由来＋手動作成のAIメモ）かどうか。
+// AIメモはDeleteで「不採用」、思考メモはDeleteで削除、と挙動を分ける
+function isAiNode(node) {
+  if (!node) return false;
+  if (node.type === 'AI') return true;
+  if (node.type === 'MEMO') return !!node.memos?.is_ai;
+  return false;
+}
+
 function contextKind(item) {
   if (item.kind === 'fragment') return 'AI回答の一部';
   if (item.type === 'AI') return 'AIメモ';
@@ -78,6 +87,9 @@ export default function SessionPage() {
   const [showChat, setShowChat] = useState(true);
   const [reviseTarget, setReviseTarget] = useState(null);
 
+  // チャット回答を範囲選択したときの一時状態（AIメモとして残すためのポップアップ用）
+  const [chatSelection, setChatSelection] = useState(null);
+
   const [loadError, setLoadError] = useState(null);
   const [memoToast, setMemoToast] = useState(null);
   const [focusRequest, setFocusRequest] = useState(null);
@@ -98,6 +110,7 @@ export default function SessionPage() {
       .from('nodes')
       .select('*, ai_turns(*), designs!designs_node_id_fkey(*), memos!memos_node_id_fkey(*)')
       .eq('session_id', sessionId)
+      .is('deleted_at', null)
       .order('created_at', { ascending: true });
     if (nodesErr) {
       console.error('nodes fetch error:', nodesErr);
@@ -162,6 +175,27 @@ export default function SessionPage() {
     document.addEventListener('mousedown', onDocClick);
     return () => document.removeEventListener('mousedown', onDocClick);
   }, [modeMenuOpen]);
+
+  // ノードを選ぶと詳細パネルが開くため、Deleteキーはパネル表示中に受け取る。
+  // 入力欄で文字を消しているときは反応させない
+  useEffect(() => {
+    if (!selectedNode) return;
+    function onKeyDown(e) {
+      if (e.key !== 'Delete' && e.key !== 'Backspace') return;
+      const t = e.target;
+      const tag = t?.tagName ? t.tagName.toLowerCase() : '';
+      if (tag === 'input' || tag === 'textarea' || t?.isContentEditable) return;
+      e.preventDefault();
+      if (isAiNode(selectedNode)) {
+        toggleRejectNode(selectedNode);
+      } else {
+        deleteNode(selectedNode);
+      }
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedNode]);
 
   // 参照候補（既存ノード＋AI回答の一部）
   const contextCandidates = [
@@ -237,6 +271,120 @@ export default function SessionPage() {
     setSelectedNode(null);
   }
 
+  // ノードを選んでDeleteキー、または詳細パネルのボタンで「不採用」を切り替える。
+  // 研究データとして残すため、行レコードは削除せず rejected_at に日時を入れる
+  async function toggleRejectNode(node) {
+    const next = node.rejected_at ? null : new Date().toISOString();
+    setNodes((prev) =>
+      prev.map((n) => (n.id === node.id ? { ...n, rejected_at: next } : n))
+    );
+    setSelectedNode((prev) => (prev && prev.id === node.id ? { ...prev, rejected_at: next } : prev));
+    try {
+      const { error } = await supabase
+        .from('nodes')
+        .update({ rejected_at: next })
+        .eq('id', node.id);
+      if (error) throw error;
+      await loadData();
+    } catch (err) {
+      console.error(err);
+      alert(`不採用の切り替えに失敗しました: ${err?.message || err}`);
+    }
+  }
+
+  // 思考メモは参加者が自分で作った記録なので、Deleteキーで消せる。
+  // ただし行そのものは残し deleted_at を入れる（誤操作の復旧と研究ログのため）。
+  // つながっていた線もあわせて解除する
+  async function deleteNode(node) {
+    if (isAiNode(node)) return;
+    const preview = (node.memos?.text || node.designs?.caption || '(画像のみ)').slice(0, 20);
+    if (!window.confirm(`思考メモ「${preview}」を削除します。よろしいですか？`)) return;
+    try {
+      const now = new Date().toISOString();
+      const { error } = await supabase
+        .from('nodes')
+        .update({ deleted_at: now })
+        .eq('id', node.id);
+      if (error) throw error;
+
+      const related = links.filter(
+        (l) => l.source_node_id === node.id || l.target_node_id === node.id
+      );
+      for (const l of related) {
+        await supabase.from('links').update({ deleted_at: now }).eq('id', l.id);
+        await supabase.from('link_logs').insert({ link_id: l.id, action: 'DELETED' });
+      }
+
+      setSelectedNode(null);
+      await loadData();
+    } catch (err) {
+      console.error(err);
+      alert(`思考メモの削除に失敗しました: ${err?.message || err}`);
+    }
+  }
+
+  // チャット内でAI回答の一部を範囲選択したときに、その位置へボタンを出す
+  function handleChatMouseUp(aiNodeId) {
+    const sel = typeof window !== 'undefined' ? window.getSelection() : null;
+    const text = sel ? sel.toString().trim() : '';
+    if (!text) {
+      setChatSelection(null);
+      return;
+    }
+    let rect = null;
+    try {
+      rect = sel.getRangeAt(0).getBoundingClientRect();
+    } catch (e) {
+      rect = null;
+    }
+    setChatSelection({
+      aiNodeId,
+      text,
+      top: rect ? rect.top - 8 : 120,
+      left: rect ? rect.left + rect.width / 2 : 200,
+    });
+  }
+
+  // 選択したAI回答の一部を「AIメモ」として保存し、もとのAIメモから線を引く
+  async function saveSelectionAsMemo() {
+    if (!chatSelection) return;
+    const { aiNodeId, text } = chatSelection;
+    setChatSelection(null);
+    try {
+      const { data: node, error: nodeErr } = await supabase
+        .from('nodes')
+        .insert({ session_id: sessionId, type: 'MEMO' })
+        .select()
+        .single();
+      if (nodeErr) throw nodeErr;
+
+      const { error: memoErr } = await supabase
+        .from('memos')
+        .insert({ node_id: node.id, text, is_ai: true });
+      if (memoErr) throw memoErr;
+
+      const { data: linkRow, error: linkErr } = await supabase
+        .from('links')
+        .insert({
+          source_node_id: aiNodeId,
+          source_fragment_id: null,
+          target_node_id: node.id,
+          link_source: 'ai_excerpt',
+        })
+        .select()
+        .single();
+      if (!linkErr && linkRow) {
+        await supabase.from('link_logs').insert({ link_id: linkRow.id, action: 'CREATED' });
+      }
+
+      await loadData();
+      setMemoToast({ nodeId: node.id, label: 'AIメモ' });
+    } catch (err) {
+      console.error(err);
+      alert(`AIメモの保存に失敗しました: ${err?.message || err}`);
+    }
+  }
+
   function reviseNode(node) {
     setReviseTarget(node);
     setMemoIsAi(!!node.memos?.is_ai);
@@ -262,14 +410,9 @@ export default function SessionPage() {
     }
   }
 
-  async function saveFragment(aiNodeId, text) {
-    await supabase.from('ai_fragments').insert({ ai_node_id: aiNodeId, selected_text: text });
-    await loadData();
-  }
-
   async function handleMemoCreated(newNodeId) {
     await loadData();
-    setMemoToast({ nodeId: newNodeId });
+    setMemoToast({ nodeId: newNodeId, label: memoIsAi ? 'AIメモ' : '思考メモ' });
   }
 
   function focusOnNode(nodeId) {
@@ -393,12 +536,14 @@ export default function SessionPage() {
             onManualConnect={createManualLink}
             onDeleteLink={deleteLink}
             showAddMemo={condition === 'TOOL'}
-            onAddMemo={(isAi) => {
+            onAddMemo={() => {
               setReviseTarget(null);
-              setMemoIsAi(!!isAi);
+              setMemoIsAi(false);
               setShowMemoModal(true);
             }}
             onEditNodeText={updateMemoText}
+            onToggleReject={toggleRejectNode}
+            onDeleteNode={deleteNode}
           />
         </div>
 
@@ -408,19 +553,26 @@ export default function SessionPage() {
             {nodes
               .filter((n) => n.type === 'AI')
               .map((n) => (
-                <div
-                  className="chat-turn"
-                  key={n.id}
-                  onClick={() => openNodeDetail(n)}
-                  style={{ cursor: 'pointer' }}
-                >
-                  <div className="chat-prompt">
+                <div className="chat-turn" key={n.id}>
+                  <div
+                    className="chat-prompt"
+                    onClick={() => openNodeDetail(n)}
+                    style={{ cursor: 'pointer' }}
+                  >
                     {n.ai_turns?.mode && (
                       <span className="mode-tag">{getMode(n.ai_turns.mode).label}</span>
                     )}
                     {n.ai_turns?.prompt}
                   </div>
-                  <div className="chat-response">{n.ai_turns?.response}</div>
+                  <div
+                    className="chat-response"
+                    onMouseUp={(e) => {
+                      e.stopPropagation();
+                      handleChatMouseUp(n.id);
+                    }}
+                  >
+                    {n.ai_turns?.response}
+                  </div>
                 </div>
               ))}
             {nodes.filter((n) => n.type === 'AI').length === 0 && (
@@ -553,7 +705,7 @@ export default function SessionPage() {
 
       {memoToast && (
         <div className="memo-toast">
-          <span>思考メモを追加しました</span>
+          <span>{memoToast.label || 'メモ'}を追加しました</span>
           <button
             onClick={() => {
               focusOnNode(memoToast.nodeId);
@@ -563,6 +715,25 @@ export default function SessionPage() {
             ここに移動
           </button>
           <button className="toast-close" onClick={() => setMemoToast(null)}>
+            ×
+          </button>
+        </div>
+      )}
+
+      {chatSelection && (
+        <div
+          className="chat-selection-popup"
+          style={{ top: chatSelection.top, left: chatSelection.left }}
+        >
+          <button type="button" className="btn" onClick={saveSelectionAsMemo}>
+            AIメモとして残す
+          </button>
+          <button
+            type="button"
+            className="chat-selection-close"
+            onClick={() => setChatSelection(null)}
+            aria-label="閉じる"
+          >
             ×
           </button>
         </div>
@@ -579,7 +750,8 @@ export default function SessionPage() {
           onConsultAI={consultAI}
           onRevise={reviseNode}
           onDeleteLink={deleteLink}
-          onSaveFragment={saveFragment}
+          onToggleReject={toggleRejectNode}
+          onDeleteNode={deleteNode}
         />
       )}
     </div>
